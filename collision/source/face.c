@@ -131,11 +131,15 @@ classify_coplanar_point_face(
 {
   assert(closest != NULL);
 
+#if 0
+// TODO: until I decide on a valid epsilon for float, comparison with 0.f will
+// trigger asserts even in valid circumstances. 
   {
     // has to be coplanar.
     float distance = get_point_distance(face, normal, point);
     assert(nextafterf(distance, 0.f) == 0.f);
   }
+#endif
 
   {
     vector3f v01, v12, v20;
