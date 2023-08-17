@@ -279,6 +279,34 @@ classify_sphere_face(
   }
 }
 
+static
+void
+extrude_capsule_along_face_normal(
+  const capsule_t* capsule, 
+  const face_t* face,
+  const vector3f* normal,
+  const segment_t* segment,
+  vector3f* penetration)
+{-
+  // TODO: This is currently erroneous, as the penetration is miscalculated.
+
+  // the intersection point is within the face and wihin the segment
+  // boundaries. the penetration in this case indicates the distance we
+  // translate along the normal to avoid a collision with the face.
+  float distance[] = { 0, 0, 0};
+  distance[0] = get_point_distance(face, normal, segment->points + 0);
+  distance[1] = get_point_distance(face, normal, segment->points + 1);
+#if 0
+// TODO: until I decide on a valid epsilon for float, comparison with 0.f will
+  assert((distance[0] <= 0.f || distance[1] <= 0.f) && 
+    "One of the distances has to be negative!");
+#endif
+  distance[2] = distance[0] <= 0.f ? -distance[0] : distance[1];
+  distance[2] += capsule->radius;
+  *penetration = *normal;
+  mult_set_v3f(penetration, distance[2]);
+}
+
 capsule_face_classification_t
 classify_capsule_face(
   const capsule_t* capsule,
@@ -541,18 +569,8 @@ classify_capsule_face(
         return classify_sphere == SPHERE_FACE_NO_COLLISION ?
           CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
       } else {
-        // the intersection point is within the face and wihin the segment
-        // boundaries. the penetration in this case indicates the distance we
-        // translate along the normal to avoid a collision with the face.
-        float distance[] = { 0, 0, 0};
-        distance[0] = get_point_distance(face, normal, segment.points + 0);
-        distance[1] = get_point_distance(face, normal, segment.points + 1);
-        assert((distance[0] <= 0.f || distance[1] <= 0.f) && 
-          "One of the distances has to be negative!");
-        distance[2] = distance[0] <= 0.f ? -distance[0] : distance[1];
-        distance[2] += capsule->radius;
-        *penetration = *normal;
-        mult_set_v3f(penetration, distance[2]);
+        extrude_capsule_along_face_normal(
+          capsule, face, normal, &segment, penetration);
         return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_INTERSECTS_FACE;
       }
     }
