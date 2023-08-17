@@ -287,7 +287,7 @@ extrude_capsule_along_face_normal(
   const vector3f* normal,
   const segment_t* segment,
   vector3f* penetration)
-{-
+{
   // TODO: This is currently erroneous, as the penetration is miscalculated.
 
   // the intersection point is within the face and wihin the segment
@@ -296,6 +296,7 @@ extrude_capsule_along_face_normal(
   float distance[] = { 0, 0, 0};
   distance[0] = get_point_distance(face, normal, segment->points + 0);
   distance[1] = get_point_distance(face, normal, segment->points + 1);
+
 #if 0
 // TODO: until I decide on a valid epsilon for float, comparison with 0.f will
   assert((distance[0] <= 0.f || distance[1] <= 0.f) && 
