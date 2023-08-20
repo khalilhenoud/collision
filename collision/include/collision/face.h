@@ -28,6 +28,10 @@ struct face_t {
   point3f points[3];
 } face_t;
 
+// NOTE: This is identical in face_t in collision space but acts as an infinite
+// plane in collision response. We reuse the enums where it makes sense.
+typedef face_t faceplane_t;
+
 COLLISION_API
 void
 get_faces_normals(
@@ -115,6 +119,14 @@ classify_sphere_face(
   const vector3f* normal,
   vector3f* penetration);
 
+COLLISION_API
+sphere_face_classification_t
+classify_sphere_faceplane(
+  const sphere_t* sphere,
+  const faceplane_t* face,
+  const vector3f* normal,
+  vector3f* penetration);
+
 typedef
 enum capsule_face_classification_t {
   CAPSULE_FACE_COLLIDES,
@@ -133,6 +145,15 @@ classify_capsule_face(
   vector3f* penetration,
   segment_t* partial_overlap);
 
+// NOTE: a simplified version of classify_capsule_face, partial overlap is not
+// considered and some of the asserts are relaxed in favor of readability.
+COLLISION_API
+capsule_face_classification_t
+classify_capsule_faceplane(
+  const capsule_t* capsule,
+  const faceplane_t* face,
+  const vector3f* normal,
+  vector3f* penetration);
 
 #ifdef __cplusplus
 }

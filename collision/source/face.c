@@ -222,6 +222,57 @@ classify_point_halfspace(
 }
 
 sphere_face_classification_t
+classify_sphere_faceplane(
+  const sphere_t* sphere,
+  const faceplane_t* face,
+  const vector3f* normal,
+  vector3f* penetration)
+{
+  float distance = 0.f;
+  vector3f projected = get_point_projection(
+    face, 
+    normal, 
+    &sphere->center, 
+    &distance);
+  
+  // the sphere distance to the infinite plane is greater than its radius.
+  if (fabs(distance) > sphere->radius)
+    return SPHERE_FACE_NO_COLLISION;
+
+  {
+    // check if the projected sphere center is in the face.
+    vector3f closest_on_face;
+    coplanar_point_classification_t classification;
+    classification = classify_coplanar_point_face(
+      face, 
+      normal, 
+      &projected, 
+      &closest_on_face);
+
+    if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
+      float scale = sphere->radius - fabs(distance);
+      *penetration = *normal;
+      mult_set_v3f(penetration, scale);
+      return IS_ZERO_LP(distance) ? 
+        SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE : 
+        SPHERE_FACE_COLLIDES;
+    } else {
+      vector3f from_to = diff_v3f(&closest_on_face, &sphere->center);
+      float from_to_length = length_v3f(&from_to);
+      float scale = sphere->radius - from_to_length;
+
+      if (from_to_length > sphere->radius)
+        return SPHERE_FACE_NO_COLLISION;
+
+      scale = sphere->radius - fabs(distance);
+      *penetration = *normal;
+      mult_set_v3f(penetration, scale);
+      return SPHERE_FACE_COLLIDES;
+    }
+  }
+}
+
+sphere_face_classification_t
 classify_sphere_face(
   const sphere_t *sphere, 
   const face_t *face, 
@@ -256,6 +307,8 @@ classify_sphere_face(
         mult_set_v3f(penetration, scale);
         return SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE;
       } else {
+        // TODO: This is redundant. I belive the values are identical to the 
+        // above case. Do not change without testing.
         vector3f_set_diff_v3f(penetration, &projected, &sphere->center);
         normalize_set_v3f(penetration);
         mult_set_v3f(penetration, scale);
@@ -285,7 +338,8 @@ extrude_capsule_along_face_normal(
   const vector3f* normal,
   const segment_t* segment,
   const point3f* intersection,
-  vector3f* penetration)
+  vector3f* penetration,
+  uint8_t as_face_plane)
 {
   // shift the segment points by -radius along the normal.
   int32_t index = -1;
@@ -317,7 +371,7 @@ extrude_capsule_along_face_normal(
     coplanar_point_classification_t classification = 
       classify_coplanar_point_face(face, normal, &projected, &closest);
     
-    if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
+    if (as_face_plane || classification == COPLANAR_POINT_ON_OR_INSIDE) {
       distance = fabs(distance);
       *penetration = *normal;
       mult_set_v3f(penetration, distance);
@@ -352,6 +406,173 @@ extrude_capsule_along_face_normal(
       }
     }
   }
+}
+
+capsule_face_classification_t
+classify_capsule_faceplane(
+  const capsule_t* capsule,
+  const faceplane_t* face,
+  const vector3f* normal,
+  vector3f* penetration)
+{
+  segment_t segment;
+  get_capsule_segment(capsule, &segment);
+  
+  assert(penetration != NULL);
+
+  {
+    // get the intersection of the segment with the plane.
+    float t;
+    point3f intersection;
+    segment_plane_classification_t classify_segment = 
+      classify_segment_face(face, normal, &segment, &intersection, &t);
+    
+    if (classify_segment == SEGMENT_PLANE_COPLANAR) {
+      coplanar_point_classification_t p_classify[2];
+      point3f closest[2];
+      p_classify[0] = classify_coplanar_point_face(
+        face, normal, segment.points + 0, closest + 0);
+      p_classify[1] = classify_coplanar_point_face(
+        face, normal, segment.points + 1, closest + 1);
+
+      if (
+        p_classify[0] == COPLANAR_POINT_ON_OR_INSIDE || 
+        p_classify[1] == COPLANAR_POINT_ON_OR_INSIDE) {
+        *penetration = *normal;
+        mult_set_v3f(penetration, capsule->radius);
+        return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
+      } else {
+        {
+          uint32_t jval[] = { 1, 2, 0, (uint32_t)-1 };
+
+          for (uint32_t i = 0, j = jval[i]; i < 3; ++i, j = jval[i]) {
+            segments_classification_t seg_classify;
+            segment_t face_segment, out_val;
+            face_segment.points[0] = face->points[i];
+            face_segment.points[1] = face->points[j];
+            seg_classify = classify_segments(
+              &face_segment, &segment, &out_val);
+
+            assert(
+              seg_classify != SEGMENTS_IDENTICAL &&
+              seg_classify != SEGMENTS_COLINEAR_OVERLAPPING &&
+              seg_classify != SEGMENTS_COLINEAR_OVERLAPPING_AT_POINT &&
+              seg_classify != SEGMENTS_DISTINCT &&
+              "the segments cannot be distinct if already coplanar!");
+
+            if (
+              seg_classify == SEGMENTS_COPLANAR_INTERSECT || 
+              seg_classify == SEGMENTS_COLINEAR_FULL_OVERLAP) {
+              *penetration = *normal;
+              mult_set_v3f(penetration, capsule->radius);
+              return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
+            } 
+          }
+        }
+
+        // both points are outside the face, this devolves into sphere-face
+        // classify. sphere-center would be the closest point on the segment.
+        {
+          point3f on_capsule[3];
+          uint32_t index = 0;
+          on_capsule[0] = closest_point_on_segment(
+            face->points + 0, &segment);
+          on_capsule[1] = closest_point_on_segment(
+            face->points + 1, &segment);
+          on_capsule[2] = closest_point_on_segment(
+            face->points + 2, &segment);
+
+          {
+            vector3f diff = diff_v3f(face->points + 0, on_capsule + 0);
+            float min_dis = length_squared_v3f(&diff), temp = 0.f;
+            for (uint32_t i = 1; i < 3; ++i) {
+              diff = diff_v3f(face->points + i, on_capsule + i);
+              temp = length_squared_v3f(&diff);
+              if (temp < min_dis) {
+                min_dis = temp;
+                index = i;
+              }
+            }
+          }
+
+          {
+            sphere_t sphere = { on_capsule[index], capsule->radius };
+            sphere_face_classification_t classify_sphere = 
+              classify_sphere_faceplane(&sphere, face, normal, penetration);
+
+            return classify_sphere == SPHERE_FACE_NO_COLLISION ?
+              CAPSULE_FACE_NO_COLLISION : 
+              CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
+          }
+        }
+      }
+    } else if (classify_segment == SEGMENT_PLANE_PARALLEL) {
+      vector3f vec, p[3];
+      float dist[3];
+      point3f on_capsule_axis;
+      p[0] = closest_point_on_segment(face->points + 0, &segment);
+      p[1] = closest_point_on_segment(face->points + 1, &segment);
+      p[2] = closest_point_on_segment(face->points + 2, &segment);
+      vector3f_set_diff_v3f(&vec, p + 0, face->points + 0);
+      dist[0] = length_v3f(&vec);
+      vector3f_set_diff_v3f(&vec, p + 1, face->points + 1);
+      dist[1] = length_v3f(&vec);
+      vector3f_set_diff_v3f(&vec, p + 2, face->points + 2);
+      dist[2] = length_v3f(&vec);
+
+      {
+        float minimum = dist[0];
+        uint32_t index = 0;
+
+        for (uint32_t i = 1; i < 3; ++i) {
+          if (dist[i] < minimum) {
+            minimum = dist[i];
+            index = i;
+          }
+        }
+
+        on_capsule_axis = p[index];
+      }
+
+      {
+        sphere_t sphere = { on_capsule_axis, capsule->radius };
+        sphere_face_classification_t classify_sphere = 
+          classify_sphere_faceplane(&sphere, face, normal, penetration);
+
+        assert(
+          classify_sphere != SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE &&
+          "We already know the capsule axis is parallel but not coplanar!!");
+
+        return classify_sphere == SPHERE_FACE_NO_COLLISION ?
+          CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
+      }
+    } else {
+      // the segment does intersect the face plane.
+      point3f closest;
+      coplanar_point_classification_t classify_point = 
+        classify_coplanar_point_face(face, normal, &intersection, &closest);
+
+      if (
+        classify_segment == SEGMENT_PLANE_INTERSECT_OFF_SEGMENT ||
+        classify_point == COPLANAR_POINT_OUTSIDE) {
+        // either the intersection point is outside the face or it is inside but
+        // outside the boundaries of the segment.
+        point3f on_capsule_axis = closest_point_on_segment(&closest, &segment);
+        sphere_t sphere = { on_capsule_axis, capsule->radius };
+        sphere_face_classification_t classify_sphere = 
+          classify_sphere_faceplane(&sphere, face, normal, penetration);
+
+        return classify_sphere == SPHERE_FACE_NO_COLLISION ?
+          CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
+      } else {
+        extrude_capsule_along_face_normal(
+          capsule, face, normal, &segment, &intersection, penetration, 1);
+        return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_INTERSECTS_FACE;
+      }
+    }
+  }
+
+  return CAPSULE_FACE_NO_COLLISION;
 }
 
 capsule_face_classification_t
@@ -618,7 +839,7 @@ classify_capsule_face(
           CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
       } else {
         extrude_capsule_along_face_normal(
-          capsule, face, normal, &segment, &intersection, penetration);
+          capsule, face, normal, &segment, &intersection, penetration, 0);
         return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_INTERSECTS_FACE;
       }
     }
