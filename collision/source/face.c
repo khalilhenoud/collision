@@ -77,10 +77,10 @@ classify_segment_face(
 
   {
     float dotproduct = dot_product_v3f(&delta, normal);
-    if (nextafterf(dotproduct, 0.f) == 0.f) {
+    if (IS_ZERO_LP(dotproduct)) {
       // colinear or parallel.
       float distance = get_point_distance(face, normal, A);
-      return (nextafterf(distance, 0.f) == 0.f) ? 
+      return IS_ZERO_LP(distance) ? 
         SEGMENT_PLANE_COPLANAR : 
         SEGMENT_PLANE_PARALLEL;
     }
@@ -96,7 +96,7 @@ classify_segment_face(
       normal->data[0] * delta.data[0] + 
       normal->data[1] * delta.data[1] + 
       normal->data[2] * delta.data[2];
-    assert(nextafterf(denom, 0.f) != 0.f);
+    assert(!IS_ZERO_LP(denom));
     *t = (
       - normal->data[0] * A->data[0] 
       - normal->data[1] * A->data[1] 
@@ -132,12 +132,10 @@ classify_coplanar_point_face(
   assert(closest != NULL);
 
 #if 0
-// TODO: until I decide on a valid epsilon for float, comparison with 0.f will
-// trigger asserts even in valid circumstances. 
   {
     // has to be coplanar.
     float distance = get_point_distance(face, normal, point);
-    assert(nextafterf(distance, 0.f) == 0.f);
+    assert(IS_ZERO_LP(distance));
   }
 #endif
 
@@ -215,7 +213,7 @@ classify_point_halfspace(
   const point3f *point)
 {
   float distance = get_point_distance(face, normal, point);
-  if (nextafterf(distance, 0.f) == 0.f) 
+  if (IS_ZERO_LP(distance)) 
     return POINT_ON_PLANE;
   else if (distance > 0.f)
     return POINT_IN_POSITIVE_HALFSPACE;
@@ -253,7 +251,7 @@ classify_sphere_face(
 
     if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
       float scale = sphere->radius - fabs(distance);
-      if (nextafterf(fabs(distance), 0.f) == 0.f) {
+      if (IS_ZERO_LP(distance)) {
         *penetration = *normal;
         mult_set_v3f(penetration, scale);
         return SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE;
@@ -282,30 +280,80 @@ classify_sphere_face(
 static
 void
 extrude_capsule_along_face_normal(
-  const capsule_t* capsule, 
+  const capsule_t* capsule,
   const face_t* face,
   const vector3f* normal,
   const segment_t* segment,
+  const point3f* intersection,
   vector3f* penetration)
 {
-  // TODO: This is currently erroneous, as the penetration is miscalculated.
+  // shift the segment points by -radius along the normal.
+  int32_t index = -1;
+  segment_t shifted;
+  vector3f to_shift = *normal;
+  mult_v3f(&to_shift, -capsule->radius);
+  shifted.points[0] = add_v3f(segment->points + 0, &to_shift);
+  shifted.points[1] = add_v3f(segment->points + 1, &to_shift);
 
-  // the intersection point is within the face and wihin the segment
-  // boundaries. the penetration in this case indicates the distance we
-  // translate along the normal to avoid a collision with the face.
-  float distance[] = { 0, 0, 0};
-  distance[0] = get_point_distance(face, normal, segment->points + 0);
-  distance[1] = get_point_distance(face, normal, segment->points + 1);
+  // find the point with the most negative distance from the face.
+  {
+    float distance[] = { 0.f, 0.f };
+    distance[0] = get_point_distance(face, normal, shifted.points + 0);
+    distance[1] = get_point_distance(face, normal, shifted.points + 1);
+    index = (distance[0] < distance[1]) ? 0 : 1;
 
+    assert(index != -1);
 #if 0
-// TODO: until I decide on a valid epsilon for float, comparison with 0.f will
-  assert((distance[0] <= 0.f || distance[1] <= 0.f) && 
-    "One of the distances has to be negative!");
+    assert(
+      distance[index] < EPSILON_FLOAT_LOW_PRECISION && 
+      "The shifted point has to be in the negative space!");
 #endif
-  distance[2] = distance[0] <= 0.f ? -distance[0] : distance[1];
-  distance[2] += capsule->radius;
-  *penetration = *normal;
-  mult_set_v3f(penetration, distance[2]);
+  }
+
+  // find the projection of that point on the face.
+  {
+    float distance = 0.f;
+    point3f closest;
+    point3f projected = get_point_projection(
+      face, normal, shifted.points + index, &distance);
+    coplanar_point_classification_t classification = 
+      classify_coplanar_point_face(face, normal, &projected, &closest);
+    
+    if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
+      distance = fabs(distance);
+      *penetration = *normal;
+      mult_set_v3f(penetration, distance);
+    } else {
+      point3f closest_on_segment;
+      segment_t to_intersect_face;
+      to_intersect_face.points[0] = *intersection;
+      to_intersect_face.points[1] = projected;
+      {
+        segment_t face_segments[3] = { {face->points[0], face->points[1]}, {face->points[1], face->points[2]}, {face->points[2], face->points[0]}};
+        segment_t result;
+        segments_classification_t classify;
+        int32_t found = 0;
+
+        for (int32_t i = 0; i < 3; ++i) {
+          classify = classify_segments(&to_intersect_face, face_segments + i, &result);
+          if (classify == SEGMENTS_COPLANAR_INTERSECT) {
+            closest_on_segment = result.points[0];
+            found = 1;
+            break;
+          }
+        }
+
+        assert(found == 1);
+        
+        {
+          vector3f closest_to_intersection = diff_v3f(intersection, &closest_on_segment);
+          float length = length_v3f(&closest_to_intersection);
+          *penetration = *normal;
+          mult_set_v3f(penetration, length);
+        }
+      }
+    }
+  }
 }
 
 capsule_face_classification_t
@@ -455,13 +503,14 @@ classify_capsule_face(
             face->points + i, 
             &segment);
           vector3f diff = diff_v3f(&candidate, face->points + i);
-          if (nextafterf(length_squared_v3f(&diff), 0.f) == 0.f) {
+          float length_squared = length_squared_v3f(&diff);
+          if (IS_ZERO_LP(length_squared)) {
             // the point is on the segment.
             diff = diff_v3f(
               partial_overlap->points + 1,
               &candidate);
             // if it isn't already set as the second point.
-            if (nextafterf(length_v3f(&diff), 0.f) != 0.f) {
+            if (!IS_ZERO_LP(length_v3f(&diff))) {
               partial_overlap->points[1] = face->points[i];
               found = 1;
               break;
@@ -490,11 +539,11 @@ classify_capsule_face(
               );
 
             if (seg_classify == SEGMENTS_COPLANAR_INTERSECT) {
-              found = 1;
+              { found = 1; }
               vector3f diff = diff_v3f(
                 partial_overlap->points + 1, 
                 out_val.points);
-              if (nextafterf(length_v3f(&diff), 0.f) != 0.f) {
+              if (!IS_ZERO_LP(length_v3f(&diff))) {
                 partial_overlap->points[1] = out_val.points[0];
                 break;
               }
@@ -571,7 +620,7 @@ classify_capsule_face(
           CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
       } else {
         extrude_capsule_along_face_normal(
-          capsule, face, normal, &segment, penetration);
+          capsule, face, normal, &segment, &intersection, penetration);
         return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_INTERSECTS_FACE;
       }
     }
