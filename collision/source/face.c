@@ -291,7 +291,7 @@ extrude_capsule_along_face_normal(
   int32_t index = -1;
   segment_t shifted;
   vector3f to_shift = *normal;
-  mult_v3f(&to_shift, -capsule->radius);
+  mult_set_v3f(&to_shift, -capsule->radius);
   shifted.points[0] = add_v3f(segment->points + 0, &to_shift);
   shifted.points[1] = add_v3f(segment->points + 1, &to_shift);
 
@@ -303,11 +303,9 @@ extrude_capsule_along_face_normal(
     index = (distance[0] < distance[1]) ? 0 : 1;
 
     assert(index != -1);
-#if 0
     assert(
       distance[index] < EPSILON_FLOAT_LOW_PRECISION && 
       "The shifted point has to be in the negative space!");
-#endif
   }
 
   // find the projection of that point on the face.
