@@ -250,7 +250,7 @@ classify_sphere_faceplane(
       &closest_on_face);
 
     if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
-      float scale = sphere->radius - fabs(distance);
+      float scale = sphere->radius - distance;
       *penetration = *normal;
       mult_set_v3f(penetration, scale);
       return IS_ZERO_LP(distance) ? 
@@ -264,7 +264,7 @@ classify_sphere_faceplane(
       if (from_to_length > sphere->radius)
         return SPHERE_FACE_NO_COLLISION;
 
-      scale = sphere->radius - fabs(distance);
+      scale = sphere->radius - distance;
       *penetration = *normal;
       mult_set_v3f(penetration, scale);
       return SPHERE_FACE_COLLIDES;
@@ -301,6 +301,8 @@ classify_sphere_face(
       &closest_on_face);
 
     if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
+      // TODO(khalil): This is erroneous, simply because of the fact that it 
+      // does not take into consideration negative distance.
       float scale = sphere->radius - fabs(distance);
       if (IS_ZERO_LP(distance)) {
         *penetration = *normal;
