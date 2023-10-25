@@ -564,8 +564,13 @@ classify_capsule_faceplane(
         sphere_face_classification_t classify_sphere = 
           classify_sphere_faceplane(&sphere, face, normal, penetration);
 
-        return classify_sphere == SPHERE_FACE_NO_COLLISION ?
-          CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
+        if (classify_sphere == SPHERE_FACE_NO_COLLISION)
+          return CAPSULE_FACE_NO_COLLISION;
+        else {
+         extrude_capsule_along_face_normal(
+            capsule, face, normal, &segment, &intersection, penetration, 1);
+          return CAPSULE_FACE_COLLIDES;
+        }
       } else {
         extrude_capsule_along_face_normal(
           capsule, face, normal, &segment, &intersection, penetration, 1);
