@@ -33,6 +33,12 @@ struct face_t {
 typedef face_t faceplane_t;
 
 COLLISION_API
+face_t
+get_extended_face(
+  const face_t* face,
+  float radius);
+
+COLLISION_API
 void
 get_faces_normals(
   const face_t* faces,
@@ -147,13 +153,16 @@ classify_capsule_face(
 
 // NOTE: a simplified version of classify_capsule_face, partial overlap is not
 // considered and some of the asserts are relaxed in favor of readability.
+// NOTE: sphere_center is an out parameter representing the sphere position
+// used in the capsule collision (useful for debugging).
 COLLISION_API
 capsule_face_classification_t
 classify_capsule_faceplane(
   const capsule_t* capsule,
   const faceplane_t* face,
   const vector3f* normal,
-  vector3f* penetration);
+  vector3f* penetration,
+  point3f* sphere_center);
 
 #ifdef __cplusplus
 }

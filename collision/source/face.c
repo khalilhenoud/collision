@@ -146,23 +146,35 @@ classify_coplanar_point_face(
     float dot[3] = { 0 };
 
     vector3f_set_diff_v3f(&v01, &face->points[0], &face->points[1]);
+    normalize_set_v3f(&v01);
     vector3f_set_diff_v3f(&v0c, &face->points[0], point);
+    normalize_set_v3f(&v0c);
     c[0] = cross_product_v3f(&v01, &v0c);
     dot[0] = dot_product_v3f(c + 0, normal);
     
     vector3f_set_diff_v3f(&v12, &face->points[1], &face->points[2]);
+    normalize_set_v3f(&v12);
     vector3f_set_diff_v3f(&v1c, &face->points[1], point);
+    normalize_set_v3f(&v1c);
     c[1] = cross_product_v3f(&v12, &v1c);
     dot[1] = dot_product_v3f(c + 1, normal);
     
     vector3f_set_diff_v3f(&v20, &face->points[2], &face->points[0]);
+    normalize_set_v3f(&v20);
     vector3f_set_diff_v3f(&v2c, &face->points[2], point);
+    normalize_set_v3f(&v2c);
     c[2] = cross_product_v3f(&v20, &v2c);
     dot[2] = dot_product_v3f(c + 2, normal);
 
     if (
-      (dot[0] <= 0.f && dot[1] <= 0.f && dot[2] <= 0.f) ||
-      (dot[0] >= 0.f && dot[1] >= 0.f && dot[2] >= 0.f)) {
+      (
+        dot[0] <= EPSILON_FLOAT_LOW_PRECISION && 
+        dot[1] <= EPSILON_FLOAT_LOW_PRECISION && 
+        dot[2] <= EPSILON_FLOAT_LOW_PRECISION) ||
+      (
+        dot[0] >= -EPSILON_FLOAT_LOW_PRECISION && 
+        dot[1] >= -EPSILON_FLOAT_LOW_PRECISION && 
+        dot[2] >= -EPSILON_FLOAT_LOW_PRECISION)) {
       *closest = *point;
       return COPLANAR_POINT_ON_OR_INSIDE;
     } else {
@@ -206,6 +218,8 @@ classify_coplanar_point_face(
   }
 }
 
+// TODO: I would like to unify the functions, change the collision resolution
+// but keep a single function.
 point_halfspace_classification_t
 classify_point_halfspace(
   const face_t *face, 
@@ -340,8 +354,7 @@ extrude_capsule_along_face_normal(
   const vector3f* normal,
   const segment_t* segment,
   const point3f* intersection,
-  vector3f* penetration,
-  uint8_t as_face_plane)
+  vector3f* penetration)
 {
   // shift the segment points by -radius along the normal.
   int32_t index = -1;
@@ -360,12 +373,12 @@ extrude_capsule_along_face_normal(
 
     assert(index != -1);
     assert(
-      distance[index] < EPSILON_FLOAT_LOW_PRECISION && 
+      distance[index] < EPSILON_FLOAT_MIN_PRECISION && 
       "The shifted point has to be in the negative space!");
   }
 
-  // find the projection of that point on the face.
   {
+    // find the projection of that point on the face.
     float distance = 0.f;
     point3f closest;
     point3f projected = get_point_projection(
@@ -373,7 +386,7 @@ extrude_capsule_along_face_normal(
     coplanar_point_classification_t classification = 
       classify_coplanar_point_face(face, normal, &projected, &closest);
     
-    if (as_face_plane || classification == COPLANAR_POINT_ON_OR_INSIDE) {
+    if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
       distance = fabs(distance);
       *penetration = *normal;
       mult_set_v3f(penetration, distance);
@@ -382,14 +395,22 @@ extrude_capsule_along_face_normal(
       segment_t to_intersect_face;
       to_intersect_face.points[0] = *intersection;
       to_intersect_face.points[1] = projected;
+
       {
-        segment_t face_segments[3] = { {face->points[0], face->points[1]}, {face->points[1], face->points[2]}, {face->points[2], face->points[0]}};
+        segment_t face_segments[3] = { 
+          {face->points[0], face->points[1]}, 
+          {face->points[1], face->points[2]}, 
+          {face->points[2], face->points[0]}};
         segment_t result;
         segments_classification_t classify;
         int32_t found = 0;
 
         for (int32_t i = 0; i < 3; ++i) {
-          classify = classify_segments(&to_intersect_face, face_segments + i, &result);
+          // TODO: write a separate classify_coplanar_segments function and use
+          // it here. This is to avoid imprecision errors. Then assert if found
+          // is 0. You can remove the if test after this one.
+          classify = classify_segments(
+            &to_intersect_face, face_segments + i, &result);
           if (classify == SEGMENTS_COPLANAR_INTERSECT) {
             closest_on_segment = result.points[0];
             found = 1;
@@ -397,10 +418,22 @@ extrude_capsule_along_face_normal(
           }
         }
 
-        assert(found == 1);
-        
+        if (found == 0) {
+          // NOTE: this does happen when the closest point on the triangle is
+          // very close to the projected point. The segment in that case is very
+          // close to perpendicular to the plane. This manifest by the
+          // classify_segments function indicating the segments are not coplanar
+          // by very small distnaces. The easiest way to deal with this is to
+          // write a separate fucntion that assumes the segments are coplanar.
+          distance = fabs(distance);
+          *penetration = *normal;
+          mult_set_v3f(penetration, distance);
+          return;
+        }
+
         {
-          vector3f closest_to_intersection = diff_v3f(intersection, &closest_on_segment);
+          vector3f closest_to_intersection = diff_v3f(
+            intersection, &closest_on_segment);
           float length = length_v3f(&closest_to_intersection);
           *penetration = *normal;
           mult_set_v3f(penetration, length);
@@ -415,7 +448,8 @@ classify_capsule_faceplane(
   const capsule_t* capsule,
   const faceplane_t* face,
   const vector3f* normal,
-  vector3f* penetration)
+  vector3f* penetration,
+  point3f* sphere_center)
 {
   segment_t segment;
   get_capsule_segment(capsule, &segment);
@@ -502,6 +536,7 @@ classify_capsule_faceplane(
             sphere_face_classification_t classify_sphere = 
               classify_sphere_faceplane(&sphere, face, normal, penetration);
 
+            *sphere_center = sphere.center;
             return classify_sphere == SPHERE_FACE_NO_COLLISION ?
               CAPSULE_FACE_NO_COLLISION : 
               CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
@@ -509,31 +544,28 @@ classify_capsule_faceplane(
         }
       }
     } else if (classify_segment == SEGMENT_PLANE_PARALLEL) {
-      vector3f vec, p[3];
-      float dist[3];
+      // classify all 3 face segments and the actual segment. Use the minimum
+      // connecting branch.
       point3f on_capsule_axis;
-      p[0] = closest_point_on_segment(face->points + 0, &segment);
-      p[1] = closest_point_on_segment(face->points + 1, &segment);
-      p[2] = closest_point_on_segment(face->points + 2, &segment);
-      vector3f_set_diff_v3f(&vec, p + 0, face->points + 0);
-      dist[0] = length_v3f(&vec);
-      vector3f_set_diff_v3f(&vec, p + 1, face->points + 1);
-      dist[1] = length_v3f(&vec);
-      vector3f_set_diff_v3f(&vec, p + 2, face->points + 2);
-      dist[2] = length_v3f(&vec);
+      segments_classification_t seg_classify[3];
+      segment_t results[3];
+      vector3f vec;
+      float dist;
+      float min_dis = FLT_MAX;
+      uint32_t jval[] = { 1, 2, 0, (uint32_t)-1 };
 
-      {
-        float minimum = dist[0];
-        uint32_t index = 0;
-
-        for (uint32_t i = 1; i < 3; ++i) {
-          if (dist[i] < minimum) {
-            minimum = dist[i];
-            index = i;
-          }
+      for (uint32_t i = 0, j = jval[i]; i < 3; ++i, j = jval[i]) {
+        segment_t face_segment;
+        face_segment.points[0] = face->points[i];
+        face_segment.points[1] = face->points[j];
+        seg_classify[i] = classify_segments(
+          &face_segment, &segment, results + i);
+        vector3f_set_diff_v3f(&vec, results[i].points, results[i].points + 1);
+        dist = length_squared_v3f(&vec);
+        if (dist < min_dis) {
+          min_dis = dist;
+          on_capsule_axis = results[i].points[1];
         }
-
-        on_capsule_axis = p[index];
       }
 
       {
@@ -541,6 +573,7 @@ classify_capsule_faceplane(
         sphere_face_classification_t classify_sphere = 
           classify_sphere_faceplane(&sphere, face, normal, penetration);
 
+        *sphere_center = sphere.center;
         assert(
           classify_sphere != SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE &&
           "We already know the capsule axis is parallel but not coplanar!!");
@@ -564,16 +597,33 @@ classify_capsule_faceplane(
         sphere_face_classification_t classify_sphere = 
           classify_sphere_faceplane(&sphere, face, normal, penetration);
 
+        *sphere_center = sphere.center;
+
         if (classify_sphere == SPHERE_FACE_NO_COLLISION)
           return CAPSULE_FACE_NO_COLLISION;
         else {
-         extrude_capsule_along_face_normal(
-            capsule, face, normal, &segment, &intersection, penetration, 1);
+          if (classify_segment == SEGMENT_PLANE_INTERSECT_ON_SEGMENT) {
+            face_t extended = get_extended_face(face, capsule->radius);
+            coplanar_point_classification_t classify_point_extended =
+              classify_coplanar_point_face(
+                &extended, normal, &intersection, &closest);
+
+            if (classify_point_extended == COPLANAR_POINT_ON_OR_INSIDE) {
+              extrude_capsule_along_face_normal(
+                capsule, 
+                &extended, 
+                normal, 
+                &segment, 
+                &intersection, 
+                penetration);
+            }
+          }
+
           return CAPSULE_FACE_COLLIDES;
         }
       } else {
         extrude_capsule_along_face_normal(
-          capsule, face, normal, &segment, &intersection, penetration, 1);
+          capsule, face, normal, &segment, &intersection, penetration);
         return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_INTERSECTS_FACE;
       }
     }
@@ -787,6 +837,8 @@ classify_capsule_face(
         return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
       }
     } else if (classify_segment == SEGMENT_PLANE_PARALLEL) {
+      // TODO: This is different from the way the faceplane_t version is handled
+      // I should revise this. Right now it is not used.
       vector3f vec, p[3];
       float dist[3];
       point3f on_capsule_axis;
@@ -846,11 +898,61 @@ classify_capsule_face(
           CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
       } else {
         extrude_capsule_along_face_normal(
-          capsule, face, normal, &segment, &intersection, penetration, 0);
+          capsule, face, normal, &segment, &intersection, penetration);
         return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_INTERSECTS_FACE;
       }
     }
   }
 
   return CAPSULE_FACE_NO_COLLISION;
+}
+
+face_t
+get_extended_face(
+  const face_t* face,
+  float radius)
+{
+  // TODO: this requires a unit test, the whole collision package requires it.
+  assert(face);
+
+  {
+    // get the 3 angles that make up the triangle.
+    // if the angle is obtuse, then use the adjacent acute angle in the
+    // quadrelateral. The formula is always K = radius / sine (angle).
+    // To find the new point, extend along the 2 incident segment by K that 
+    // corresponds to that angle. 
+    // Q1: how to find the angle:
+    //   - the dot product of the 2 incident unitary vector gets you the cosine
+    //   - if the dot product is positive, just acos.
+    //   - otherwise, acute = acos(abs(dot product)), acute = PI - acute.
+    face_t augmented;
+    float angles[3];
+    float dot_product;
+    float k;
+    vector3f offset;
+    vector3f avec[2];
+    uint32_t vec0[3][2] = { {0, 1}, {1, 2}, {2, 0} };
+    uint32_t vec1[3][2] = { {0, 2}, {1, 0}, {2, 1} };
+    for (uint32_t i = 0; i < 3; ++i) {
+      vector3f_set_diff_v3f(
+        avec + 0, &face->points[vec0[i][0]], &face->points[vec0[i][1]]);
+      normalize_set_v3f(avec + 0);
+      vector3f_set_diff_v3f(
+        avec + 1, &face->points[vec1[i][0]], &face->points[vec1[i][1]]);
+      normalize_set_v3f(avec + 1);
+
+      dot_product = dot_product_v3f(avec + 0, avec + 1);
+      angles[i] = acosf(fabs(dot_product));
+
+      k = radius / sinf(angles[i]);
+      vector3f_copy(augmented.points + i, face->points + i);
+      mult_set_v3f(avec + 0, -k);
+      mult_set_v3f(avec + 1, -k);
+      vector3f_copy(&offset, avec + 0);
+      add_set_v3f(&offset, avec + 1);
+      add_set_v3f(augmented.points + i, &offset); 
+    }
+
+    return augmented;
+  }
 }
