@@ -131,13 +131,9 @@ classify_coplanar_point_face(
 {
   assert(closest != NULL);
 
-#if 0
-  {
-    // has to be coplanar.
-    float distance = get_point_distance(face, normal, point);
-    assert(IS_ZERO_LP(distance));
-  }
-#endif
+  // NOTE: The function will not check if the point is coplanar or not. It is up
+  // to the caller to make sure it is. The reason for this is the epsilon value
+  // choice, which is unreliable and error prone.
 
   {
     vector3f v01, v12, v20;
@@ -218,8 +214,6 @@ classify_coplanar_point_face(
   }
 }
 
-// TODO: I would like to unify the functions, change the collision resolution
-// but keep a single function.
 point_halfspace_classification_t
 classify_point_halfspace(
   const face_t *face, 
@@ -235,62 +229,83 @@ classify_point_halfspace(
     return POINT_IN_NEGATIVE_HALFSPACE;
 }
 
-sphere_face_classification_t
-classify_sphere_faceplane(
-  const sphere_t* sphere,
-  const faceplane_t* face,
-  const vector3f* normal,
-  vector3f* penetration)
+face_t
+get_extended_face(
+  const face_t* face,
+  float radius)
 {
-  float distance = 0.f;
-  vector3f projected = get_point_projection(
-    face, 
-    normal, 
-    &sphere->center, 
-    &distance);
-  
-  // the sphere distance to the infinite plane is greater than its radius.
-  if (fabs(distance) > sphere->radius)
-    return SPHERE_FACE_NO_COLLISION;
+  assert(face);
 
   {
-    // check if the projected sphere center is in the face.
-    vector3f closest_on_face;
-    coplanar_point_classification_t classification;
-    classification = classify_coplanar_point_face(
-      face, 
-      normal, 
-      &projected, 
-      &closest_on_face);
+    face_t augmented;
+    float angles[3];
+    float dot_product;
+    float k;
+    vector3f offset;
+    vector3f avec[2];
+    uint32_t vec0[3][2] = { {0, 1}, {1, 2}, {2, 0} };
+    uint32_t vec1[3][2] = { {0, 2}, {1, 0}, {2, 1} };
+    for (uint32_t i = 0; i < 3; ++i) {
+      vector3f_set_diff_v3f(
+        avec + 0, &face->points[vec0[i][0]], &face->points[vec0[i][1]]);
+      normalize_set_v3f(avec + 0);
+      vector3f_set_diff_v3f(
+        avec + 1, &face->points[vec1[i][0]], &face->points[vec1[i][1]]);
+      normalize_set_v3f(avec + 1);
 
-    if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
-      float scale = sphere->radius - distance;
-      *penetration = *normal;
-      mult_set_v3f(penetration, scale);
-      return IS_ZERO_LP(distance) ? 
-        SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE : 
-        SPHERE_FACE_COLLIDES;
-    } else {
-      vector3f from_to = diff_v3f(&closest_on_face, &sphere->center);
-      float from_to_length = length_v3f(&from_to);
-      float scale = sphere->radius - from_to_length;
+      dot_product = dot_product_v3f(avec + 0, avec + 1);
+      angles[i] = acosf(fabs(dot_product));
 
-      if (from_to_length > sphere->radius)
-        return SPHERE_FACE_NO_COLLISION;
-
-      scale = sphere->radius - distance;
-      *penetration = *normal;
-      mult_set_v3f(penetration, scale);
-      return SPHERE_FACE_COLLIDES;
+      k = radius / sinf(angles[i]);
+      vector3f_copy(augmented.points + i, face->points + i);
+      mult_set_v3f(avec + 0, -k);
+      mult_set_v3f(avec + 1, -k);
+      vector3f_copy(&offset, avec + 0);
+      add_set_v3f(&offset, avec + 1);
+      add_set_v3f(augmented.points + i, &offset); 
     }
+
+    return augmented;
   }
+}
+
+static
+void
+calculate_sphere_faceplane_penetration(
+  const sphere_t* sphere,
+  const face_t* face,
+  const vector3f* normal,
+  const float distance,
+  vector3f* penetration)
+{
+  float scale = sphere->radius - distance;
+  *penetration = *normal;
+  mult_set_v3f(penetration, scale);
+}
+
+static
+void
+calculate_sphere_face_penetration(
+  const sphere_t* sphere,
+  const face_t* face,
+  const vector3f* normal,
+  const float distance,
+  vector3f* closest,
+  vector3f* penetration)
+{
+  vector3f from_to = diff_v3f(closest, &sphere->center);
+  float scale = sphere->radius - length_v3f(&from_to);
+  normalize_set_v3f(&from_to);
+  mult_set_v3f(&from_to, scale);
+  *penetration = from_to;
 }
 
 sphere_face_classification_t
 classify_sphere_face(
-  const sphere_t *sphere, 
-  const face_t *face, 
-  const vector3f *normal,
+  const sphere_t* sphere,
+  const face_t* face,
+  const vector3f* normal,
+  const int32_t as_plane,
   vector3f* penetration)
 {
   float distance = 0.f;
@@ -300,7 +315,6 @@ classify_sphere_face(
     &sphere->center, 
     &distance);
   
-  // the sphere distance to the infinite plane is greater than its radius.
   if (fabs(distance) > sphere->radius)
     return SPHERE_FACE_NO_COLLISION;
 
@@ -314,35 +328,32 @@ classify_sphere_face(
       &projected, 
       &closest_on_face);
 
-    if (classification == COPLANAR_POINT_ON_OR_INSIDE) {
-      // TODO(khalil): This is erroneous, simply because of the fact that it 
-      // does not take into consideration negative distance.
-      float scale = sphere->radius - fabs(distance);
-      if (IS_ZERO_LP(distance)) {
-        *penetration = *normal;
-        mult_set_v3f(penetration, scale);
-        return SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE;
-      } else {
-        // TODO: This is redundant. I belive the values are identical to the 
-        // above case. Do not change without testing.
-        vector3f_set_diff_v3f(penetration, &projected, &sphere->center);
-        normalize_set_v3f(penetration);
-        mult_set_v3f(penetration, scale);
-        return SPHERE_FACE_COLLIDES;
-      }
-    } else {
+    if (classification != COPLANAR_POINT_ON_OR_INSIDE) {
       vector3f from_to = diff_v3f(&closest_on_face, &sphere->center);
-      float from_to_length = length_v3f(&from_to);
-      float scale = sphere->radius - from_to_length;
-
-      if (from_to_length > sphere->radius)
+      if (length_v3f(&from_to) > sphere->radius)
         return SPHERE_FACE_NO_COLLISION;
-
-      normalize_set_v3f(&from_to);
-      mult_set_v3f(&from_to, scale);
-      *penetration = from_to;
-      return SPHERE_FACE_COLLIDES;
     }
+
+    // guaranteed collision at this point.
+    if (as_plane) {
+      calculate_sphere_faceplane_penetration(
+        sphere, face, normal, distance, penetration);
+    } else {
+      calculate_sphere_face_penetration(
+        sphere, 
+        face, 
+        normal, 
+        distance, 
+        classification == COPLANAR_POINT_ON_OR_INSIDE ? 
+          &projected : &closest_on_face, 
+        penetration);
+    }
+
+    return classification == COPLANAR_POINT_ON_OR_INSIDE ? 
+      (IS_ZERO_LP(distance) ? 
+        SPHERE_FACE_COLLIDES_SPHERE_CENTER_ON_FACE : 
+        SPHERE_FACE_COLLIDES) : 
+        SPHERE_FACE_COLLIDES;
   }
 }
 
@@ -373,7 +384,7 @@ extrude_capsule_along_face_normal(
 
     assert(index != -1);
     assert(
-      distance[index] < EPSILON_FLOAT_MIN_PRECISION && 
+      distance[index] < EPSILON_FLOAT_LOW_PRECISION && 
       "The shifted point has to be in the negative space!");
   }
 
@@ -444,10 +455,11 @@ extrude_capsule_along_face_normal(
 }
 
 capsule_face_classification_t
-classify_capsule_faceplane(
+classify_capsule_face(
   const capsule_t* capsule,
-  const faceplane_t* face,
+  const face_t* face,
   const vector3f* normal,
+  const int32_t as_plane,
   vector3f* penetration,
   point3f* sphere_center)
 {
@@ -534,7 +546,8 @@ classify_capsule_faceplane(
           {
             sphere_t sphere = { on_capsule[index], capsule->radius };
             sphere_face_classification_t classify_sphere = 
-              classify_sphere_faceplane(&sphere, face, normal, penetration);
+              classify_sphere_face(
+                &sphere, face, normal, as_plane, penetration);
 
             *sphere_center = sphere.center;
             return classify_sphere == SPHERE_FACE_NO_COLLISION ?
@@ -571,11 +584,12 @@ classify_capsule_faceplane(
       {
         sphere_t sphere = { on_capsule_axis, capsule->radius };
         sphere_face_classification_t classify_sphere = 
-          classify_sphere_faceplane(&sphere, face, normal, penetration);
+          classify_sphere_face(
+            &sphere, face, normal, as_plane, penetration);
 
         *sphere_center = sphere.center;
         assert(
-          classify_sphere != SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE &&
+          classify_sphere != SPHERE_FACE_COLLIDES_SPHERE_CENTER_ON_FACE &&
           "We already know the capsule axis is parallel but not coplanar!!");
 
         return classify_sphere == SPHERE_FACE_NO_COLLISION ?
@@ -595,14 +609,16 @@ classify_capsule_faceplane(
         point3f on_capsule_axis = closest_point_on_segment(&closest, &segment);
         sphere_t sphere = { on_capsule_axis, capsule->radius };
         sphere_face_classification_t classify_sphere = 
-          classify_sphere_faceplane(&sphere, face, normal, penetration);
-
+          classify_sphere_face(
+            &sphere, face, normal, as_plane, penetration);
         *sphere_center = sphere.center;
 
         if (classify_sphere == SPHERE_FACE_NO_COLLISION)
           return CAPSULE_FACE_NO_COLLISION;
         else {
-          if (classify_segment == SEGMENT_PLANE_INTERSECT_ON_SEGMENT) {
+          if (
+            as_plane && 
+            classify_segment == SEGMENT_PLANE_INTERSECT_ON_SEGMENT) {
             face_t extended = get_extended_face(face, capsule->radius);
             coplanar_point_classification_t classify_point_extended =
               classify_coplanar_point_face(
@@ -630,329 +646,4 @@ classify_capsule_faceplane(
   }
 
   return CAPSULE_FACE_NO_COLLISION;
-}
-
-capsule_face_classification_t
-classify_capsule_face(
-  const capsule_t* capsule,
-  const face_t* face,
-  const vector3f* normal,
-  vector3f* penetration,
-  segment_t* partial_overlap)
-{
-  segment_t segment;
-  get_capsule_segment(capsule, &segment);
-  
-  assert(penetration != NULL);
-  assert(partial_overlap != NULL);
-
-  {
-    // get the intersection of the segment with the plane.
-    float t;
-    point3f intersection;
-    segment_plane_classification_t classify_segment = 
-      classify_segment_face(face, normal, &segment, &intersection, &t);
-    
-    if (classify_segment == SEGMENT_PLANE_COPLANAR) {
-      coplanar_point_classification_t p_classify[2];
-      point3f closest[2];
-      p_classify[0] = classify_coplanar_point_face(
-        face, normal, segment.points + 0, closest + 0);
-      p_classify[1] = classify_coplanar_point_face(
-        face, normal, segment.points + 1, closest + 1);
-
-      if (p_classify[0] == p_classify[1]) {
-
-        // both points are inside the face or on the periphery.
-        if (p_classify[0] == COPLANAR_POINT_ON_OR_INSIDE) {
-          *penetration = *normal;
-          mult_set_v3f(penetration, capsule->radius);
-          return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
-        } else {
-          int32_t intersects_face = 0;
-
-          {
-            // try and find the partial_overlap in case there is intersection.
-            uint32_t jval[] = { 1, 2, 0, (uint32_t)-1 };
-            uint32_t vertex_index = 0;
-
-            for (uint32_t i = 0, j = jval[i]; i < 3; ++i, j = jval[i]) {
-              segments_classification_t seg_classify;
-              segment_t face_segment, out_val;
-              face_segment.points[0] = face->points[i];
-              face_segment.points[1] = face->points[j];
-              seg_classify = classify_segments(
-                &face_segment, &segment, &out_val);
-
-              assert(
-                seg_classify != SEGMENTS_IDENTICAL &&
-                seg_classify != SEGMENTS_COLINEAR_OVERLAPPING &&
-                seg_classify != SEGMENTS_COLINEAR_OVERLAPPING_AT_POINT &&
-                seg_classify != SEGMENTS_DISTINCT &&
-                "the segments cannot be distinct if already coplanar!");
-
-              if (seg_classify == SEGMENTS_COPLANAR_INTERSECT) {
-                intersects_face = 1;
-                partial_overlap->points[vertex_index++] = out_val.points[0];
-              } else if (seg_classify == SEGMENTS_COLINEAR_FULL_OVERLAP) {
-                intersects_face = 1;
-                assert(
-                  vertex_index == 0 && 
-                  "there cannot be a prior intersection if there is full overlap!");
-                vertex_index = 2;
-                partial_overlap->points[0] = face_segment.points[0];
-                partial_overlap->points[1] = face_segment.points[1];
-                break;
-              }
-            }
-
-            if (intersects_face == 1) {
-              assert(
-                vertex_index == 2 &&
-                "if there is an intersection we need to have 2 points, as both"
-                "segments original points are outside the face!");
-              
-              *penetration = *normal;
-              mult_set_v3f(penetration, capsule->radius);
-              return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
-            } else
-              assert(
-                vertex_index == 0 &&
-                "if there is no intersection vertex_index should be 0!");
-          }
-
-          // both points are outside the face, this devolves into sphere-face
-          // classify. sphere-center would be the closest point on the segment.
-          if (intersects_face == 0) {
-            point3f on_capsule[3];
-            uint32_t index = 0;
-            on_capsule[0] = closest_point_on_segment(
-              face->points + 0, &segment);
-            on_capsule[1] = closest_point_on_segment(
-              face->points + 1, &segment);
-            on_capsule[2] = closest_point_on_segment(
-              face->points + 2, &segment);
-
-            {
-              vector3f diff = diff_v3f(face->points + 0, on_capsule + 0);
-              float min_dis = length_squared_v3f(&diff), temp = 0.f;
-              for (uint32_t i = 1; i < 3; ++i) {
-                diff = diff_v3f(face->points + i, on_capsule + i);
-                temp = length_squared_v3f(&diff);
-                if (temp < min_dis) {
-                  min_dis = temp;
-                  index = i;
-                }
-              }
-            }
-
-            {
-              sphere_t sphere = { on_capsule[index], capsule->radius };
-              sphere_face_classification_t classify_sphere = 
-                classify_sphere_face(&sphere, face, normal, penetration);
-
-              return classify_sphere == SPHERE_FACE_NO_COLLISION ?
-                CAPSULE_FACE_NO_COLLISION : 
-                CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
-            }
-          }
-        }
-      } else {
-        // the segment has one point inside the face and one outside, we need to
-        // find the partial overlap. the segment will intersect one side or 2 of
-        // the face at max. This can be the case if the intersection point is at
-        // a corner.
-        int32_t found = 0;
-        uint32_t index_on, index_out;
-        index_on = p_classify[0] == COPLANAR_POINT_ON_OR_INSIDE ? 0 : 1;
-        index_out = (index_on + 1) % 2;
-
-        partial_overlap->points[0] = 
-        partial_overlap->points[1] = segment.points[index_on];
-
-        // if any of the face points is on the segment, that would make it the
-        // second point of the overlap and that would be the end of that.
-        // otherwise, we need to check intersection of the segment with each
-        // of the face segments.
-        for (uint32_t i = 0; i < 3; ++i) {
-          point3f candidate = closest_point_on_segment(
-            face->points + i, 
-            &segment);
-          vector3f diff = diff_v3f(&candidate, face->points + i);
-          float length_squared = length_squared_v3f(&diff);
-          if (IS_ZERO_LP(length_squared)) {
-            // the point is on the segment.
-            diff = diff_v3f(
-              partial_overlap->points + 1,
-              &candidate);
-            // if it isn't already set as the second point.
-            if (!IS_ZERO_LP(length_v3f(&diff))) {
-              partial_overlap->points[1] = face->points[i];
-              found = 1;
-              break;
-            }
-          }
-        }
-
-        // NOTE: Due to imprecision, there is no guarantee that segment
-        // classify will return what we expect so I should use the data I
-        // already have. I need to know if the in point belongs to any of the
-        // segments of the face.
-        if (!found) {
-          uint32_t jval[] = { 1, 2, 0, (uint32_t)-1 };
-          for (uint32_t i = 0, j = jval[i]; i < 3; ++i, j = jval[i]) {
-            segments_classification_t seg_classify;
-            segment_t face_segment, out_val;
-            // NOTE: the normal to the face segment is segment x face normal
-            face_segment.points[0] = face->points[i];
-            face_segment.points[1] = face->points[j];
-            seg_classify = classify_segments(
-              &face_segment, &segment, &out_val);
-            
-            assert(
-              seg_classify != SEGMENTS_COLINEAR_OVERLAPPING &&
-              "this should have been cought in the point test preceeding this!"
-              );
-
-            if (seg_classify == SEGMENTS_COPLANAR_INTERSECT) {
-              { found = 1; }
-              vector3f diff = diff_v3f(
-                partial_overlap->points + 1, 
-                out_val.points);
-              if (!IS_ZERO_LP(length_v3f(&diff))) {
-                partial_overlap->points[1] = out_val.points[0];
-                break;
-              }
-            }
-          }
-
-          assert(
-            found == 1 && 
-            "at this point both overlap points should have been found even if" 
-            "they are the same!!");
-        }
-
-        *penetration = *normal;
-        mult_set_v3f(penetration, capsule->radius);
-        return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_COPLANAR_FACE;
-      }
-    } else if (classify_segment == SEGMENT_PLANE_PARALLEL) {
-      // TODO: This is different from the way the faceplane_t version is handled
-      // I should revise this. Right now it is not used.
-      vector3f vec, p[3];
-      float dist[3];
-      point3f on_capsule_axis;
-      p[0] = closest_point_on_segment(face->points + 0, &segment);
-      p[1] = closest_point_on_segment(face->points + 1, &segment);
-      p[2] = closest_point_on_segment(face->points + 2, &segment);
-      vector3f_set_diff_v3f(&vec, p + 0, face->points + 0);
-      dist[0] = length_v3f(&vec);
-      vector3f_set_diff_v3f(&vec, p + 1, face->points + 1);
-      dist[1] = length_v3f(&vec);
-      vector3f_set_diff_v3f(&vec, p + 2, face->points + 2);
-      dist[2] = length_v3f(&vec);
-
-      {
-        float minimum = dist[0];
-        uint32_t index = 0;
-
-        for (uint32_t i = 1; i < 3; ++i) {
-          if (dist[i] < minimum) {
-            minimum = dist[i];
-            index = i;
-          }
-        }
-
-        on_capsule_axis = p[index];
-      }
-
-      {
-        sphere_t sphere = { on_capsule_axis, capsule->radius };
-        sphere_face_classification_t classify_sphere = 
-          classify_sphere_face(&sphere, face, normal, penetration);
-
-        assert(
-          classify_sphere != SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE &&
-          "We already know the capsule axis is parallel but not coplanar!!");
-
-        return classify_sphere == SPHERE_FACE_NO_COLLISION ?
-          CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
-      }
-    } else {
-      // the segment does intersect the face plane.
-      point3f closest;
-      coplanar_point_classification_t classify_point = 
-        classify_coplanar_point_face(face, normal, &intersection, &closest);
-
-      if (
-        classify_segment == SEGMENT_PLANE_INTERSECT_OFF_SEGMENT ||
-        classify_point == COPLANAR_POINT_OUTSIDE) {
-        // either the intersection point is outside the face or it is inside but
-        // outside the boundaries of the segment.
-        point3f on_capsule_axis = closest_point_on_segment(&closest, &segment);
-        sphere_t sphere = { on_capsule_axis, capsule->radius };
-        sphere_face_classification_t classify_sphere = 
-          classify_sphere_face(&sphere, face, normal, penetration);
-
-        return classify_sphere == SPHERE_FACE_NO_COLLISION ?
-          CAPSULE_FACE_NO_COLLISION : CAPSULE_FACE_COLLIDES;
-      } else {
-        extrude_capsule_along_face_normal(
-          capsule, face, normal, &segment, &intersection, penetration);
-        return CAPSULE_FACE_COLLIDES_CAPSULE_AXIS_INTERSECTS_FACE;
-      }
-    }
-  }
-
-  return CAPSULE_FACE_NO_COLLISION;
-}
-
-face_t
-get_extended_face(
-  const face_t* face,
-  float radius)
-{
-  // TODO: this requires a unit test, the whole collision package requires it.
-  assert(face);
-
-  {
-    // get the 3 angles that make up the triangle.
-    // if the angle is obtuse, then use the adjacent acute angle in the
-    // quadrelateral. The formula is always K = radius / sine (angle).
-    // To find the new point, extend along the 2 incident segment by K that 
-    // corresponds to that angle. 
-    // Q1: how to find the angle:
-    //   - the dot product of the 2 incident unitary vector gets you the cosine
-    //   - if the dot product is positive, just acos.
-    //   - otherwise, acute = acos(abs(dot product)), acute = PI - acute.
-    face_t augmented;
-    float angles[3];
-    float dot_product;
-    float k;
-    vector3f offset;
-    vector3f avec[2];
-    uint32_t vec0[3][2] = { {0, 1}, {1, 2}, {2, 0} };
-    uint32_t vec1[3][2] = { {0, 2}, {1, 0}, {2, 1} };
-    for (uint32_t i = 0; i < 3; ++i) {
-      vector3f_set_diff_v3f(
-        avec + 0, &face->points[vec0[i][0]], &face->points[vec0[i][1]]);
-      normalize_set_v3f(avec + 0);
-      vector3f_set_diff_v3f(
-        avec + 1, &face->points[vec1[i][0]], &face->points[vec1[i][1]]);
-      normalize_set_v3f(avec + 1);
-
-      dot_product = dot_product_v3f(avec + 0, avec + 1);
-      angles[i] = acosf(fabs(dot_product));
-
-      k = radius / sinf(angles[i]);
-      vector3f_copy(augmented.points + i, face->points + i);
-      mult_set_v3f(avec + 0, -k);
-      mult_set_v3f(avec + 1, -k);
-      vector3f_copy(&offset, avec + 0);
-      add_set_v3f(&offset, avec + 1);
-      add_set_v3f(augmented.points + i, &offset); 
-    }
-
-    return augmented;
-  }
 }

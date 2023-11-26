@@ -28,10 +28,7 @@ struct face_t {
   point3f points[3];
 } face_t;
 
-// NOTE: This is identical in face_t in collision space but acts as an infinite
-// plane in collision response. We reuse the enums where it makes sense.
-typedef face_t faceplane_t;
-
+// IMPORTANT: normals are assumed unitary in all these functions.
 COLLISION_API
 face_t
 get_extended_face(
@@ -45,7 +42,7 @@ get_faces_normals(
   const uint32_t count,
   vector3f* normals);
 
-// NOTE: normal is assumed normalized in all these functions.
+// NOTE: distance < 0 if the point is in the face's negative halfspace.
 COLLISION_API
 float
 get_point_distance(
@@ -86,6 +83,8 @@ enum coplanar_point_classification_t {
   COPLANAR_POINT_COUNT
 } coplanar_point_classification_t;
 
+// NOTE: The point is assumed coplanar, this function will not do any checks as
+// these are prone to floating point imprecision error.
 COLLISION_API
 coplanar_point_classification_t
 classify_coplanar_point_face(
@@ -112,25 +111,19 @@ classify_point_halfspace(
 typedef
 enum sphere_face_classification_t {
   SPHERE_FACE_COLLIDES,
-  SPHERE_FACE_COLLIDES_SPHERE_CENTER_IN_FACE,
+  SPHERE_FACE_COLLIDES_SPHERE_CENTER_ON_FACE,
   SPHERE_FACE_NO_COLLISION,
   SPHERE_FACE_COUNT
 } sphere_face_classification_t;
 
+// NOTE: as_plane affects how the penetration is calculated.
 COLLISION_API
 sphere_face_classification_t
 classify_sphere_face(
   const sphere_t* sphere,
   const face_t* face,
   const vector3f* normal,
-  vector3f* penetration);
-
-COLLISION_API
-sphere_face_classification_t
-classify_sphere_faceplane(
-  const sphere_t* sphere,
-  const faceplane_t* face,
-  const vector3f* normal,
+  const int32_t as_plane,
   vector3f* penetration);
 
 typedef
@@ -142,25 +135,14 @@ enum capsule_face_classification_t {
   CAPSULE_FACE_COUNT
 } capsule_face_classification_t;
 
+// NOTE: as_plane affects how the penetration is calculated.
 COLLISION_API
 capsule_face_classification_t
 classify_capsule_face(
   const capsule_t* capsule,
   const face_t* face,
   const vector3f* normal,
-  vector3f* penetration,
-  segment_t* partial_overlap);
-
-// NOTE: a simplified version of classify_capsule_face, partial overlap is not
-// considered and some of the asserts are relaxed in favor of readability.
-// NOTE: sphere_center is an out parameter representing the sphere position
-// used in the capsule collision (useful for debugging).
-COLLISION_API
-capsule_face_classification_t
-classify_capsule_faceplane(
-  const capsule_t* capsule,
-  const faceplane_t* face,
-  const vector3f* normal,
+  const int32_t as_plane,
   vector3f* penetration,
   point3f* sphere_center);
 
