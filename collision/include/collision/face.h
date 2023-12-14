@@ -126,6 +126,13 @@ classify_sphere_face(
   const int32_t as_plane,
   vector3f* penetration);
 
+COLLISION_API
+float
+get_sphere_face_distance(
+  const sphere_t* sphere, 
+  const face_t* face, 
+  const vector3f* normal);
+
 typedef
 enum capsule_face_classification_t {
   CAPSULE_FACE_COLLIDES,

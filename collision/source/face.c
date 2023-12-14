@@ -357,6 +357,38 @@ classify_sphere_face(
   }
 }
 
+float
+get_sphere_face_distance(
+  const sphere_t* sphere, 
+  const face_t* face, 
+  const vector3f* normal)
+{
+  float distance = 0.f;
+  vector3f projected = get_point_projection(
+    face, 
+    normal, 
+    &sphere->center, 
+    &distance);
+
+  {
+    // if the projected sphere center is in the face, return distance.
+    vector3f closest_on_face;
+    coplanar_point_classification_t classification;
+    classification = classify_coplanar_point_face(
+      face, 
+      normal, 
+      &projected, 
+      &closest_on_face);
+
+    if (classification != COPLANAR_POINT_ON_OR_INSIDE) {
+      vector3f from_to = diff_v3f(&closest_on_face, &sphere->center);
+      distance = length_v3f(&from_to);
+    }
+  }
+
+  return distance;
+}
+
 static
 void
 extrude_capsule_along_face_normal(
