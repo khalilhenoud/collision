@@ -19,7 +19,6 @@ extern "C" {
 #include <collision/segment_classification.h>
 #include <math/c/vector3f.h>
 
-// This requires testing
 
 typedef struct segment_t segment_t;
 typedef struct sphere_t sphere_t;
