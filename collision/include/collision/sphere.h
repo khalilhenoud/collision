@@ -8,22 +8,16 @@
  * @copyright Copyright (c) 2023
  * 
  */
-#ifndef SPHERE_COLLISION
-#define SPHERE_COLLISION
+#ifndef SPHERE_COLLISION_H
+#define SPHERE_COLLISION_H
 
 #ifdef __cplusplus 
 extern "C" {
 #endif
 
 #include <collision/internal/module.h>
-#include <math/c/vector3f.h>
+#include <math/c/sphere.h>
 
-
-typedef
-struct sphere_t {
-  point3f center;
-  float radius;
-} sphere_t;
 
 typedef
 enum spheres_classification_t {
@@ -40,7 +34,6 @@ classify_spheres(
   const sphere_t *source, 
   const sphere_t *target,
   vector3f* penetration);
-
 
 #ifdef __cplusplus
 }

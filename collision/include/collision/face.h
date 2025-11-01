@@ -8,55 +8,20 @@
  * @copyright Copyright (c) 2023
  * 
  */
-#ifndef FACE_COLLISION
-#define FACE_COLLISION
+#ifndef FACE_COLLISION_H
+#define FACE_COLLISION_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include <collision/internal/module.h>
-#include <math/c/vector3f.h>
+#include <math/c/face.h>
 
 
 typedef struct sphere_t sphere_t;
 typedef struct segment_t segment_t;
 typedef struct capsule_t capsule_t;
-
-typedef
-struct face_t {
-  point3f points[3];
-} face_t;
-
-// IMPORTANT: normals are assumed unitary in all these functions.
-COLLISION_API
-face_t
-get_extended_face(
-  const face_t* face,
-  float radius);
-
-COLLISION_API
-void
-get_faces_normals(
-  const face_t* faces,
-  const uint32_t count,
-  vector3f* normals);
-
-// NOTE: distance < 0 if the point is in the face's negative halfspace.
-COLLISION_API
-float
-get_point_distance(
-  const face_t* face,
-  const vector3f* normal,
-  const point3f* point);
-
-COLLISION_API
-point3f
-get_point_projection(
-  const face_t* face,
-  const vector3f* normal,
-  const point3f* point,
-  float* distance);
 
 typedef
 enum segment_plane_classification_t {
@@ -129,9 +94,10 @@ classify_sphere_face(
 COLLISION_API
 float
 get_sphere_face_distance(
-  const sphere_t* sphere, 
-  const face_t* face, 
-  const vector3f* normal);
+  const sphere_t *sphere, 
+  const face_t *face, 
+  const vector3f *normal,
+  vector3f *direction);
 
 typedef
 enum capsule_face_classification_t {
@@ -141,6 +107,16 @@ enum capsule_face_classification_t {
   CAPSULE_FACE_NO_COLLISION,
   CAPSULE_FACE_COUNT
 } capsule_face_classification_t;
+
+COLLISION_API
+void
+extrude_capsule_along_face_normal(
+  const capsule_t* capsule,
+  const face_t* face,
+  const vector3f* normal,
+  const segment_t* segment,
+  const point3f* intersection,
+  vector3f* penetration);
 
 // NOTE: as_plane affects how the penetration is calculated.
 COLLISION_API
@@ -152,6 +128,46 @@ classify_capsule_face(
   const int32_t as_plane,
   vector3f* penetration,
   point3f* sphere_center);
+
+COLLISION_API
+float
+get_capsule_face_distance(
+  const capsule_t *capsule, 
+  const face_t *face, 
+  const vector3f *normal,
+  vector3f *direction);
+
+// call this function to find the initial toi. the capsule must be in non-solid
+// at t=0 and colliding at t=1. the function will return the toi between 0 and 1
+COLLISION_API
+float
+find_capsule_face_intersection_time(
+  capsule_t capsule,
+  const face_t* face, 
+  const vector3f* normal,
+  const vector3f displacement,
+  const uint32_t max_iteration,
+  const float limit);
+
+typedef
+enum planes_classification_t {
+  PLANES_COLINEAR,
+  PLANES_COLINEAR_OPPOSITE_FACING,
+  PLANES_PARALLEL,
+  PLANES_PARALLEL_OPPOSITE_FACING,
+  PLANES_DISTINCT,
+  PLANES_COUNT
+} planes_classification_t;
+
+// NOTE: faces are treated as planes in this context and normals are assumed to
+// be normalized.
+COLLISION_API
+planes_classification_t
+classify_planes(
+  const face_t* plane0,
+  const vector3f* normal0,
+  const face_t* plane1,
+  const vector3f* normal1);
 
 #ifdef __cplusplus
 }

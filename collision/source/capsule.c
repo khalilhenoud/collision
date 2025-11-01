@@ -10,9 +10,9 @@
  */
 #include <math.h>
 #include <assert.h>
+#include <collision/capsule.h>
 #include <collision/sphere.h>
 #include <collision/segment.h>
-#include <collision/capsule.h>
 
 
 sphere_capsule_classification_t
@@ -57,10 +57,10 @@ classify_sphere_capsule(
     }
   } 
 
-  return SPHERES_DISTINCT;
+  return SPHERE_CAPSULE_DISTINCT;
 }
 
-int32_t
+segments_classification_t
 classify_capsules_segments(
   const capsule_t *source, 
   const capsule_t *target, 
@@ -140,40 +140,4 @@ classify_capsules(
   }
 
   return CAPSULES_DISTINCT;
-}
-
-void
-get_capsule_segment(
-  const capsule_t *source,
-  segment_t *segment)
-{
-  assert(segment != NULL);
-
-  {
-    vector3f direction_source = { 0.f, 1.f, 0.f };
-
-    mult_set_v3f(&direction_source, source->half_height);
-    vector3f_set_diff_v3f(segment->points + 0, &direction_source, &source->center); // a is in the -y.
-    mult_set_v3f(&direction_source, -1.f);
-    vector3f_set_diff_v3f(segment->points + 1, &direction_source, &source->center); // b is in the +y
-  }
-}
-
-void
-get_capsule_segment_loose(
-  const capsule_t *source,
-  point3f *a,
-  point3f *b)
-{
-  assert(a != NULL);
-  assert(b != NULL);
-
-   {
-    vector3f direction_source = { 0.f, 1.f, 0.f };
-
-    mult_set_v3f(&direction_source, source->half_height);
-    vector3f_set_diff_v3f(a, &direction_source, &source->center); // a is in the -y.
-    mult_set_v3f(&direction_source, -1.f);
-    vector3f_set_diff_v3f(b, &direction_source, &source->center); // b is in the +y
-  }
 }

@@ -8,29 +8,20 @@
  * @copyright Copyright (c) 2023
  * 
  */
-#ifndef CAPSULE_COLLISION
-#define CAPSULE_COLLISION
+#ifndef CAPSULE_COLLISION_H
+#define CAPSULE_COLLISION_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include <collision/internal/module.h>
+#include <math/c/capsule.h>
 #include <collision/segment_classification.h>
-#include <math/c/vector3f.h>
 
 
 typedef struct segment_t segment_t;
 typedef struct sphere_t sphere_t;
-
-// direction is (0, 1, 0) in all cases, a transform is required to modify this.
-// NOTE: make a version of these functions that take transform into account;
-typedef
-struct capsule_t {
-  point3f center;
-  float half_height; 
-  float radius;
-} capsule_t;
 
 typedef
 enum sphere_capsule_classification_t {
@@ -72,21 +63,6 @@ classify_capsules(
   const capsule_t *source, 
   const capsule_t *target, 
   vector3f* penetration);
-
-// TODO: Provide a variant with transform.
-COLLISION_API
-void
-get_capsule_segment(
-  const capsule_t *source,
-  segment_t *segment);
-
-// TODO: Provide a variant with transform.
-COLLISION_API
-void
-get_capsule_segment_loose(
-  const capsule_t *source,
-  point3f *a,
-  point3f *b);
 
 #ifdef __cplusplus
 }

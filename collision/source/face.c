@@ -1,7 +1,7 @@
 /**
  * @file face.c
  * @author khalilhenoud@gmail.com
- * @brief 
+ * @brief collision functionality for face
  * @version 0.1
  * @date 2023-06-10
  * 
@@ -15,51 +15,6 @@
 #include <collision/sphere.h>
 #include <collision/capsule.h>
 
-
-void
-get_faces_normals(
-  const face_t *faces, 
-  const uint32_t count, 
-  vector3f *normals)
-{
-  vector3f v1, v2;
-
-  assert(normals != NULL);
-
-  for (uint32_t i = 0; i < count; ++i) {
-    vector3f_set_diff_v3f(&v1, &faces[i].points[0], &faces[i].points[1]);
-    vector3f_set_diff_v3f(&v2, &faces[i].points[0], &faces[i].points[2]);
-    normals[i] = cross_product_v3f(&v1, &v2);
-    normalize_set_v3f(normals + i);
-  }
-}
-
-float
-get_point_distance(
-  const face_t *face, 
-  const vector3f *normal, 
-  const point3f *point)
-{
-  vector3f to_point = diff_v3f(&face->points[0], point);
-  return dot_product_v3f(normal, &to_point);
-}
-
-point3f
-get_point_projection(
-  const face_t *face, 
-  const vector3f *normal, 
-  const point3f *point,
-  float *distance)
-{
-  assert(distance != NULL);
-  *distance = get_point_distance(face, normal, point);
-  
-  {
-    vector3f scaled_normal = mult_v3f(normal, *distance);
-    point3f projected = diff_v3f(&scaled_normal, point);
-    return projected;
-  }
-}
 
 segment_plane_classification_t
 classify_segment_face(
@@ -229,47 +184,6 @@ classify_point_halfspace(
     return POINT_IN_NEGATIVE_HALFSPACE;
 }
 
-face_t
-get_extended_face(
-  const face_t* face,
-  float radius)
-{
-  assert(face);
-
-  {
-    face_t augmented;
-    float angles[3];
-    float dot_product;
-    float k;
-    vector3f offset;
-    vector3f avec[2];
-    uint32_t vec0[3][2] = { {0, 1}, {1, 2}, {2, 0} };
-    uint32_t vec1[3][2] = { {0, 2}, {1, 0}, {2, 1} };
-    for (uint32_t i = 0; i < 3; ++i) {
-      vector3f_set_diff_v3f(
-        avec + 0, &face->points[vec0[i][0]], &face->points[vec0[i][1]]);
-      normalize_set_v3f(avec + 0);
-      vector3f_set_diff_v3f(
-        avec + 1, &face->points[vec1[i][0]], &face->points[vec1[i][1]]);
-      normalize_set_v3f(avec + 1);
-
-      dot_product = dot_product_v3f(avec + 0, avec + 1);
-      angles[i] = acosf(fabs(dot_product));
-
-      k = radius / sinf(angles[i]);
-      vector3f_copy(augmented.points + i, face->points + i);
-      mult_set_v3f(avec + 0, -k);
-      mult_set_v3f(avec + 1, -k);
-      vector3f_copy(&offset, avec + 0);
-      add_set_v3f(&offset, avec + 1);
-      add_set_v3f(augmented.points + i, &offset); 
-    }
-
-    return augmented;
-  }
-}
-
-static
 void
 calculate_sphere_faceplane_penetration(
   const sphere_t* sphere,
@@ -283,7 +197,6 @@ calculate_sphere_faceplane_penetration(
   mult_set_v3f(penetration, scale);
 }
 
-static
 void
 calculate_sphere_face_penetration(
   const sphere_t* sphere,
@@ -315,7 +228,7 @@ classify_sphere_face(
     &sphere->center, 
     &distance);
   
-  if (fabs(distance) > sphere->radius)
+  if (fabs(distance) >= sphere->radius)
     return SPHERE_FACE_NO_COLLISION;
 
   {
@@ -330,7 +243,7 @@ classify_sphere_face(
 
     if (classification != COPLANAR_POINT_ON_OR_INSIDE) {
       vector3f from_to = diff_v3f(&closest_on_face, &sphere->center);
-      if (length_v3f(&from_to) > sphere->radius)
+      if (length_v3f(&from_to) >= sphere->radius)
         return SPHERE_FACE_NO_COLLISION;
     }
 
@@ -359,15 +272,17 @@ classify_sphere_face(
 
 float
 get_sphere_face_distance(
-  const sphere_t* sphere, 
-  const face_t* face, 
-  const vector3f* normal)
+  const sphere_t *sphere, 
+  const face_t *face, 
+  const vector3f *normal,
+  vector3f *direction)
 {
   float distance = 0.f;
+  *direction = mult_v3f(normal, -1.f);
   vector3f projected = get_point_projection(
-    face, 
-    normal, 
-    &sphere->center, 
+    face,
+    normal,
+    &sphere->center,
     &distance);
 
   {
@@ -383,13 +298,18 @@ get_sphere_face_distance(
     if (classification != COPLANAR_POINT_ON_OR_INSIDE) {
       vector3f from_to = diff_v3f(&closest_on_face, &sphere->center);
       distance = length_v3f(&from_to);
+
+      *direction = mult_v3f(&from_to, -1.f);
+      normalize_set_v3f(direction);
     }
   }
 
+  distance = fabs(distance);
+  distance -= sphere->radius;
+  distance = fmax(distance, 0.f);
   return distance;
 }
 
-static
 void
 extrude_capsule_along_face_normal(
   const capsule_t* capsule,
@@ -678,4 +598,99 @@ classify_capsule_face(
   }
 
   return CAPSULE_FACE_NO_COLLISION;
+}
+
+float
+get_capsule_face_distance(
+  const capsule_t *capsule, 
+  const face_t *face, 
+  const vector3f *normal,
+  vector3f *direction)
+{
+  vector3f penetration;
+  point3f sphere_center;
+  capsule_face_classification_t classify = 
+    classify_capsule_face(
+      capsule, face, normal, 0, &penetration, &sphere_center);
+  
+  direction->data[0] = direction->data[1] = direction->data[2] = 0.f;
+  if (classify != CAPSULE_FACE_NO_COLLISION) 
+    return 0.f;
+
+  {
+    sphere_t sphere;
+    sphere.center = sphere_center;
+    sphere.radius = capsule->radius;
+    return get_sphere_face_distance(&sphere, face, normal, direction);
+  }
+}
+
+float
+find_capsule_face_intersection_time(
+  capsule_t capsule,
+  const face_t* face,
+  const vector3f* normal,
+  const vector3f displacement,
+  const uint32_t max_iteration,
+  const float limit)
+{
+  point3f starting_position = capsule.center;
+  float start = 0.f, end = 1.f, mid_point;
+  uint32_t iteration = 0;
+  vector3f penetration;
+  point3f sphere_center;
+  capsule_face_classification_t classification;
+  vector3f scaled_displacement;
+  const vector3f unit = normalize_v3f(&displacement);
+  vector3f direction;
+  float distance, cosine;
+  distance = get_capsule_face_distance(&capsule, face, normal, &direction);
+  // this can be negative if the capsule is to the back of the face. It is the 
+  // caller responsiblity to filter these faces if needed.
+  cosine = fabs(dot_product_v3f(&direction, &unit));
+  distance /= cosine;
+
+  while (distance > limit && ++iteration < max_iteration) {
+    mid_point = start + (end - start) / 2.f;
+    scaled_displacement = mult_v3f(&displacement, mid_point);
+    capsule.center = add_v3f(&starting_position, &scaled_displacement);
+    classification = classify_capsule_face(
+      &capsule, face, normal, 0, &penetration, &sphere_center);
+    if (classification == CAPSULE_FACE_NO_COLLISION) {
+      start = mid_point;
+      distance = get_capsule_face_distance(&capsule, face, normal, &direction);
+      cosine = fabs(dot_product_v3f(&direction, &unit));
+      distance /= cosine;
+    } else
+      end = mid_point;
+  }
+
+  return start;
+}
+
+planes_classification_t
+classify_planes(
+  const face_t* plane0,
+  const vector3f* normal0,
+  const face_t* plane1,
+  const vector3f* normal1)
+{
+  assert(plane0 && normal0 && plane1 && normal1);
+
+  {
+    float dot = dot_product_v3f(normal0, normal1);
+    float abs_dot = fabs(dot);
+    
+    if (IS_SAME_LP(abs_dot, 1.f)) {
+      int32_t opposite = IS_SAME_LP(dot, -1.f);
+      float distance = get_point_distance(plane0, normal0, plane1->points);
+
+      if (IS_ZERO_LP(distance))
+        return opposite ? PLANES_COLINEAR_OPPOSITE_FACING : PLANES_COLINEAR;
+      else
+        return opposite ? PLANES_PARALLEL_OPPOSITE_FACING : PLANES_PARALLEL;
+    }
+
+    return PLANES_DISTINCT;
+  }
 }

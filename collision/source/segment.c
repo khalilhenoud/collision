@@ -13,69 +13,6 @@
 #include <collision/segment.h>
 
 
-float
-get_point_distance_to_line(
-  const point3f* point,
-  const line_t* target)
-{
-  float ab_length, a_point_length, dot, sin_radian;
-  vector3f a_point, a_b, a_point_normalized, a_b_normalized;
-  vector3f_set_diff_v3f(&a_point, target->points + 0, point);
-  vector3f_set_diff_v3f(&a_b, target->points + 0, target->points + 1);
-  ab_length = length_v3f(&a_b);
-  assert(
-    !IS_ZERO_LP(ab_length)  &&
-    "We do not support collapsed segments!");
-
-  a_point_length = length_v3f(&a_point);
-  if (IS_ZERO_LP(a_point_length))
-    return 0.f;
-  
-  a_b_normalized = div_v3f(&a_b, ab_length);
-  a_point_normalized = div_v3f(&a_point, a_point_length);
-  dot = dot_product_v3f(&a_b_normalized, &a_point_normalized);
-  sin_radian = sinf(acosf(dot));
-  return sin_radian * a_point_length;
-}
-
-point3f 
-closest_point_on_segment(
-  const point3f* point, 
-  const segment_t* target)
-{
-  float proj_length, ab_length;
-  vector3f a_point, a_b, a_b_normalized, result;
-  vector3f_set_diff_v3f(&a_point, target->points + 0, point);
-  vector3f_set_diff_v3f(&a_b, target->points + 0, target->points + 1);
-  ab_length = length_v3f(&a_b);
-  assert(
-    !IS_ZERO_LP(ab_length) &&
-    "We do not support collapsed segments!");
-  a_b_normalized = normalize_v3f(&a_b);
-  proj_length = dot_product_v3f(&a_point, &a_b_normalized) / ab_length;
-  proj_length = proj_length < 0.f ? 0.f : proj_length;
-  proj_length = proj_length > 1.f ? 1.f : proj_length;
-
-  {
-    vector3f ab_scaled = mult_v3f(&a_b, proj_length);
-    // TODO: These functions needs a variant that does not take a pointer.
-    result = add_v3f(target->points + 0, &ab_scaled);
-  }
-  return result;
-}
-
-point3f 
-closest_point_on_segment_loose(
-  const point3f* point, 
-  const point3f* a,
-  const point3f* b)
-{
-  segment_t target;
-  target.points[0] = *a;
-  target.points[1] = *b;
-  return closest_point_on_segment(point, &target);
-}
-
 // NOTE: for internal use only. If we want to generalize then we need to add
 // asserts to ensure the segments are coplanar (and not parallel).
 static
@@ -258,8 +195,12 @@ classify_segments(
   }
 
   // test if both segments are identical.
-  if ((equal_to_v3f(first->points + 0, second->points + 0) && equal_to_v3f(first->points + 1, second->points + 1)) || 
-      (equal_to_v3f(first->points + 0, second->points + 1) && equal_to_v3f(first->points + 1, second->points + 0))) {
+  if ((
+        equal_to_v3f(first->points + 0, second->points + 0) && 
+        equal_to_v3f(first->points + 1, second->points + 1)) || 
+      (
+        equal_to_v3f(first->points + 0, second->points + 1) && 
+        equal_to_v3f(first->points + 1, second->points + 0))) {
       *out = *first;
       return SEGMENTS_IDENTICAL;
     }
@@ -320,10 +261,12 @@ classify_segments(
         } else if (ac_cb * ad_db < 0.f) {
           result = SEGMENTS_COLINEAR_OVERLAPPING;
           if (ac_cb > 0.f) {
-            out->points[0] = (ac_cd > 0.f) ? first->points[1] : first->points[0];
+            out->points[0] = 
+              (ac_cd > 0.f) ? first->points[1] : first->points[0];
             out->points[1] = second->points[0];
           } else {
-            out->points[0] = (ad_dc > 0.f) ? first->points[1] : first->points[0];
+            out->points[0] = 
+              (ad_dc > 0.f) ? first->points[1] : first->points[0];
             out->points[1] = second->points[1];
           }
         } else {
