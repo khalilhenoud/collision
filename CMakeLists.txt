@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.22)
 
 project(collision_package)
 
-if(NOT ENGINE_BUILD)
+if (NOT HAS_STANDALONE_PREDECESSOR)
+  set (HAS_STANDALONE_PREDECESSOR true)
+
   # DOWNLOAD ALL THE SUBMODULES
   find_package(Git QUIET)
   if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
@@ -10,7 +12,7 @@ if(NOT ENGINE_BUILD)
     option(GIT_SUBMODULE "Check submodules during build" ON)
     if(GIT_SUBMODULES)
       message(STATUS "Submodule update")
-      execute_process(COMMAND $(GIT_EXECUTABLE) submodule upate --init --recursive 
+      execute_process(COMMAND $(GIT_EXECUTABLE) submodule upate --init --recursive
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       RESULT_VARIABLE GIT_SUBMOD_RESULT)
       if(NOT GIT_SUBMOD_RESULT EQUAL "0")
