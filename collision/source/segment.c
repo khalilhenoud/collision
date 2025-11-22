@@ -13,69 +13,6 @@
 #include <collision/segment.h>
 
 
-float
-get_point_distance_to_line(
-  const point3f* point,
-  const line_t* target)
-{
-  float ab_length, a_point_length, dot, sin_radian;
-  vector3f a_point, a_b, a_point_normalized, a_b_normalized;
-  vector3f_set_diff_v3f(&a_point, target->points + 0, point);
-  vector3f_set_diff_v3f(&a_b, target->points + 0, target->points + 1);
-  ab_length = length_v3f(&a_b);
-  assert(
-    nextafterf(ab_length, 0.f) != 0.f &&
-    "We do not support collapsed segments!");
-
-  a_point_length = length_v3f(&a_point);
-  if (nextafterf(a_point_length, 0.f) == 0.f)
-    return 0.f;
-  
-  a_b_normalized = div_v3f(&a_b, ab_length);
-  a_point_normalized = div_v3f(&a_point, a_point_length);
-  dot = dot_product_v3f(&a_b_normalized, &a_point_normalized);
-  sin_radian = sinf(acosf(dot));
-  return sin_radian * a_point_length;
-}
-
-point3f 
-closest_point_on_segment(
-  const point3f* point, 
-  const segment_t* target)
-{
-  float proj_length, ab_length;
-  vector3f a_point, a_b, a_b_normalized, result;
-  vector3f_set_diff_v3f(&a_point, target->points + 0, point);
-  vector3f_set_diff_v3f(&a_b, target->points + 0, target->points + 1);
-  ab_length = length_v3f(&a_b);
-  assert(
-    nextafterf(ab_length, 0.f) != 0.f &&
-    "We do not support collapsed segments!");
-  a_b_normalized = normalize_v3f(&a_b);
-  proj_length = dot_product_v3f(&a_point, &a_b_normalized) / ab_length;
-  proj_length = proj_length < 0.f ? 0.f : proj_length;
-  proj_length = proj_length > 1.f ? 1.f : proj_length;
-
-  {
-    vector3f ab_scaled = mult_v3f(&a_b, proj_length);
-    // TODO: These functions needs a variant that does not take a pointer.
-    result = add_v3f(target->points + 0, &ab_scaled);
-  }
-  return result;
-}
-
-point3f 
-closest_point_on_segment_loose(
-  const point3f* point, 
-  const point3f* a,
-  const point3f* b)
-{
-  segment_t target;
-  target.points[0] = *a;
-  target.points[1] = *b;
-  return closest_point_on_segment(point, &target);
-}
-
 // NOTE: for internal use only. If we want to generalize then we need to add
 // asserts to ensure the segments are coplanar (and not parallel).
 static
@@ -119,16 +56,16 @@ find_coplanar_segments_bridge(
       // unit test data (first set for the 'if', second for the 'else if'):
       // {{ 30, 0, -100 }, { 35, 0, -90 }}, {{ 0, -50, -80 }, { 5, 25, -100 }}
       // {{ 30, 0, -100 }, { 30, 0, -90 }}, {{ 0, -50, -100 }, { 20, -50, -90 }}
-      if (nextafterf(deltax_prime, 0.f) != 0.f) {
+      if (!IS_ZERO_LP(deltax_prime)) {
         if (
           (denom = (deltay_prime / deltax_prime) * deltax - deltay) && 
-          nextafterf(denom, 0.f) != 0.f) {
+          !IS_ZERO_LP(denom)) {
           found = 1;
           t = ya - yc + (deltay_prime / deltax_prime) * (xc - xa);
           t /= denom;
         } else if (
           (denom = (deltaz_prime / deltax_prime) * deltax - deltaz) && 
-          nextafterf(denom, 0.f) != 0.f) {
+          !IS_ZERO_LP(denom)) {
           found = 1;
           t = za - zc + (deltaz_prime / deltax_prime) * (xc - xa);
           t /= denom;
@@ -141,16 +78,16 @@ find_coplanar_segments_bridge(
       // unit test data (first set for the 'if', second for the 'else if'):
       // {{ 30, 50, -100 }, { 35, 0, -90 }}, {{ 0, -50, -100 }, { 0, -70, -90 }}
       // {{ 30, 50, -100 }, { 30, 0, -90 }}, {{ 0, -50, -100 }, { 0, -70, -90 }}
-      if (!found && nextafterf(deltay_prime, 0.f) != 0.f) {
+      if (!found && !IS_ZERO_LP(deltay_prime)) {
         if (
           (denom = (deltax_prime / deltay_prime) * deltay - deltax) && 
-          nextafterf(denom, 0.f) != 0.f) {
+          !IS_ZERO_LP(denom)) {
           found = 1;
           t = xa - xc + (deltax_prime / deltay_prime) * (yc - ya);
           t /= denom;
         } else if (
           (denom = (deltaz_prime / deltay_prime) * deltay - deltaz) && 
-          nextafterf(denom, 0.f) != 0.f) {
+          !IS_ZERO_LP(denom)) {
           found = 1;
           t = za - zc + (deltaz_prime / deltay_prime) * (yc - ya);
           t /= denom;
@@ -163,16 +100,16 @@ find_coplanar_segments_bridge(
       // unit test data (first set for the 'if', second for the 'else if'):
       // {{ 30, 50, -100 }, { 20, 0, -90 }}, {{ 0, -70, -80 }, { 0, -70, -90 }}
       // {{ 30, 50, -100 }, { 30, 0, -90 }}, {{ 0, -70, -80 }, { 0, -70, -90 }}
-      if (!found && nextafterf(deltaz_prime, 0.f) != 0.f) {
+      if (!found && !IS_ZERO_LP(deltaz_prime)) {
         if (
           (denom = (deltax_prime / deltaz_prime) * deltaz - deltax) && 
-          nextafterf(denom, 0.f) != 0.f) {
+          !IS_ZERO_LP(denom)) {
           found = 1;
           t = xa - xc + (deltax_prime / deltaz_prime) * (zc - za);
           t /= denom;
         } else if (
           (denom = (deltay_prime / deltaz_prime) * deltaz - deltay) && 
-          nextafterf(denom, 0.f) != 0.f) {
+          !IS_ZERO_LP(denom)) {
           found = 1;
           t = ya - yc + (deltay_prime / deltaz_prime) * (zc - za);
           t /= denom;
@@ -254,12 +191,16 @@ classify_segments(
     vector3f ab_segment, cd_segment;
     vector3f_set_diff_v3f(&ab_segment, first->points + 0, first->points + 1);
     vector3f_set_diff_v3f(&cd_segment, second->points + 0, second->points + 1);
-    assert(nextafterf(length_v3f(&ab_segment), 0.f) != 0.f);
+    assert(!IS_ZERO_LP(length_v3f(&ab_segment)));
   }
 
   // test if both segments are identical.
-  if ((equal_to_v3f(first->points + 0, second->points + 0) && equal_to_v3f(first->points + 1, second->points + 1)) || 
-      (equal_to_v3f(first->points + 0, second->points + 1) && equal_to_v3f(first->points + 1, second->points + 0))) {
+  if ((
+        equal_to_v3f(first->points + 0, second->points + 0) && 
+        equal_to_v3f(first->points + 1, second->points + 1)) || 
+      (
+        equal_to_v3f(first->points + 0, second->points + 1) && 
+        equal_to_v3f(first->points + 1, second->points + 0))) {
       *out = *first;
       return SEGMENTS_IDENTICAL;
     }
@@ -276,21 +217,21 @@ classify_segments(
     dot1 = dot_product_v3f(&ab_normalized, &cd_normalized);
 
     // if true then the segments are parallel, we test if they are colinear.
-    if (nextafterf(fabs(dot1), 1.f) == 1.f) {
+    if (IS_SAME_LP(fabs(dot1), 1.f)) {
       vector3f from_to;
       vector3f_set_diff_v3f(&from_to, first->points + 0, second->points + 0);
 
       // if ac are identical we use ad.
-      if (nextafterf(length_v3f(&from_to), 0.f) == 0.f)
+      if (IS_ZERO_LP(length_v3f(&from_to)))
         vector3f_set_diff_v3f(&from_to, first->points + 0, second->points + 1);
 
       // both connecting segments cannot be identical.
-      assert(nextafterf(length_v3f(&from_to), 0.f) != 0.f);
+      assert(!IS_ZERO_LP(length_v3f(&from_to)));
       normalize_set_v3f(&from_to);
       dot2 = dot_product_v3f(&ab_normalized, &from_to);
 
       // if true than the segments are colinear, otherwise simply parallel.
-      if (nextafterf(fabs(dot2), 1.f) == 1.f) {
+      if (IS_SAME_LP(fabs(dot2), 1.f)) {
         float ac_cb, ad_db, ca_ad, cb_bd, ac_cd, ad_dc;
         vector3f ac, ca, cb, bc, ad, db, bd, dc;
         vector3f_set_diff_v3f(&ac, first->points + 0, second->points + 0);
@@ -320,10 +261,12 @@ classify_segments(
         } else if (ac_cb * ad_db < 0.f) {
           result = SEGMENTS_COLINEAR_OVERLAPPING;
           if (ac_cb > 0.f) {
-            out->points[0] = (ac_cd > 0.f) ? first->points[1] : first->points[0];
+            out->points[0] = 
+              (ac_cd > 0.f) ? first->points[1] : first->points[0];
             out->points[1] = second->points[0];
           } else {
-            out->points[0] = (ad_dc > 0.f) ? first->points[1] : first->points[0];
+            out->points[0] = 
+              (ad_dc > 0.f) ? first->points[1] : first->points[0];
             out->points[1] = second->points[1];
           }
         } else {
@@ -377,7 +320,7 @@ classify_segments(
       distance = dot_product_v3f(&ac, &normal);
 
       // already coplanar.
-      if (nextafterf(distance, 0.f) == 0.f)
+      if (IS_ZERO_LP(distance))
         result = find_coplanar_segments_bridge(first, second, out);
       else {
         // make coplanar, and re-translate the result.
@@ -385,7 +328,7 @@ classify_segments(
         segment_t translated = *first;
         add_set_v3f(translated.points + 0, &offset);
         add_set_v3f(translated.points + 1, &offset);
-        result = find_coplanar_segments_bridge(&translated, second, out);
+        find_coplanar_segments_bridge(&translated, second, out);
         mult_set_v3f(&offset, -1.f);
         add_set_v3f(out->points + 0, &offset);
       }

@@ -8,12 +8,8 @@
  * @copyright Copyright (c) 2023
  * 
  */
-#ifndef SEGMENT_CLASSIFICATION
-#define SEGMENT_CLASSIFICATION
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#ifndef SEGMENT_CLASSIFICATION_H
+#define SEGMENT_CLASSIFICATION_H
 
 
 typedef
@@ -29,9 +25,5 @@ enum segments_classification_t {
   SEGMENTS_DISTINCT,
   SEGMENTS_COUNT
 } segments_classification_t;
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

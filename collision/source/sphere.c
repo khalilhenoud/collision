@@ -26,8 +26,8 @@ classify_spheres(
 
   {
     float distance = length_v3f(&from_to);
-    if (nextafterf(distance, 0.f) == 0.f) {
-      if (nextafterf(source->radius, target->radius) == target->radius)
+    if (IS_ZERO_LP(distance)) {
+      if (IS_SAME_LP(source->radius, target->radius))
         return SPHERES_IDENTICAL;
       else
         return SPHERES_SHARE_CENTER;
