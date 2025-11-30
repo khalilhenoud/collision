@@ -1,17 +1,17 @@
 /**
  * @file sphere.h
  * @author khalilhenoud@gmail.com
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2023-06-17
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 #ifndef SPHERE_COLLISION_H
 #define SPHERE_COLLISION_H
 
-#ifdef __cplusplus 
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -31,7 +31,7 @@ enum spheres_classification_t {
 COLLISION_API
 spheres_classification_t
 classify_spheres(
-  const sphere_t *source, 
+  const sphere_t *source,
   const sphere_t *target,
   vector3f* penetration);
 

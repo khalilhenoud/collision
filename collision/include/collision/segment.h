@@ -1,12 +1,12 @@
 /**
  * @file segment.h
  * @author khalilhenoud@gmail.com
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2023-06-10
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 #ifndef SEGMENT_COLLISION_H
 #define SEGMENT_COLLISION_H
@@ -26,8 +26,8 @@ extern "C" {
 COLLISION_API
 segments_classification_t
 classify_segments(
-  const segment_t *first, 
-  const segment_t *second, 
+  const segment_t *first,
+  const segment_t *second,
   segment_t *out);
 
 #ifdef __cplusplus

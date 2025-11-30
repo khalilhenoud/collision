@@ -8,18 +8,18 @@
  * @copyright Copyright (c) 2023
  *
  */
-#include <math.h>
 #include <assert.h>
+#include <math.h>
 #include <collision/capsule.h>
-#include <collision/sphere.h>
 #include <collision/segment.h>
+#include <collision/sphere.h>
 
 
 sphere_capsule_classification_t
 classify_sphere_capsule(
   const sphere_t *source,
   const capsule_t *capsule,
-  vector3f* penetration)
+  vector3f *penetration)
 {
   vector3f a_capsule, b_capsule, on_capsule;
 
@@ -89,7 +89,7 @@ capsules_classification_t
 classify_capsules(
   const capsule_t *source,
   const capsule_t *target,
-  vector3f* penetration)
+  vector3f *penetration)
 {
   segment_t bridge;
   segments_classification_t

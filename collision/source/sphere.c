@@ -1,21 +1,21 @@
 /**
  * @file sphere.c
  * @author khalilhenoud@gmail.com
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2023-06-17
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
-#include <math.h>
 #include <assert.h>
+#include <math.h>
 #include <collision/sphere.h>
 
 
 spheres_classification_t
 classify_spheres(
-  const sphere_t *source, 
+  const sphere_t *source,
   const sphere_t *target,
   vector3f* penetration)
 {

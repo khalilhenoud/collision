@@ -4,9 +4,9 @@
  * @brief to avoid including segment.h when only the classification is required.
  * @version 0.1
  * @date 2023-06-20
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 #ifndef SEGMENT_CLASSIFICATION_H
 #define SEGMENT_CLASSIFICATION_H
