@@ -1,12 +1,12 @@
 /**
  * @file face.h
  * @author khalilhenoud@gmail.com
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2023-06-10
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 #ifndef FACE_COLLISION_H
 #define FACE_COLLISION_H
@@ -35,8 +35,8 @@ enum segment_plane_classification_t {
 COLLISION_API
 segment_plane_classification_t
 classify_segment_face(
-  const face_t *face, 
-  const vector3f *normal, 
+  const face_t *face,
+  const vector3f *normal,
   const segment_t *segment,
   point3f *intersection,
   float *t);
@@ -94,8 +94,8 @@ classify_sphere_face(
 COLLISION_API
 float
 get_sphere_face_distance(
-  const sphere_t *sphere, 
-  const face_t *face, 
+  const sphere_t *sphere,
+  const face_t *face,
   const vector3f *normal,
   vector3f *direction);
 
@@ -132,8 +132,8 @@ classify_capsule_face(
 COLLISION_API
 float
 get_capsule_face_distance(
-  const capsule_t *capsule, 
-  const face_t *face, 
+  const capsule_t *capsule,
+  const face_t *face,
   const vector3f *normal,
   vector3f *direction);
 
@@ -143,7 +143,7 @@ COLLISION_API
 float
 find_capsule_face_intersection_time(
   capsule_t capsule,
-  const face_t* face, 
+  const face_t* face,
   const vector3f* normal,
   const vector3f displacement,
   const uint32_t max_iteration,

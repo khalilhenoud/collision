@@ -1,12 +1,12 @@
 /**
  * @file capsule.h
  * @author khalilhenoud@gmail.com
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2023-06-18
- * 
+ *
  * @copyright Copyright (c) 2023
- * 
+ *
  */
 #ifndef CAPSULE_COLLISION_H
 #define CAPSULE_COLLISION_H
@@ -16,8 +16,8 @@ extern "C" {
 #endif
 
 #include <collision/internal/module.h>
-#include <math/c/capsule.h>
 #include <collision/segment_classification.h>
+#include <math/c/capsule.h>
 
 
 typedef struct segment_t segment_t;
@@ -34,18 +34,18 @@ enum sphere_capsule_classification_t {
 COLLISION_API
 sphere_capsule_classification_t
 classify_sphere_capsule(
-  const sphere_t *source, 
+  const sphere_t *source,
   const capsule_t *capsule,
   vector3f* penetration);
 
 COLLISION_API
 segments_classification_t
 classify_capsules_segments(
-  const capsule_t *source, 
-  const capsule_t *target, 
+  const capsule_t *source,
+  const capsule_t *target,
   segment_t *result);
 
-typedef 
+typedef
 enum capsules_classification_t {
   CAPSULES_AXIS_IDENTICAL,
   CAPSULES_AXIS_COLINEAR_PARTIAL_OVERLAP,
@@ -60,8 +60,8 @@ enum capsules_classification_t {
 COLLISION_API
 capsules_classification_t
 classify_capsules(
-  const capsule_t *source, 
-  const capsule_t *target, 
+  const capsule_t *source,
+  const capsule_t *target,
   vector3f* penetration);
 
 #ifdef __cplusplus
