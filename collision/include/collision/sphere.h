@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 #include <collision/internal/module.h>
-#include <math/c/sphere.h>
+#include <math/sphere.h>
 
 
 typedef

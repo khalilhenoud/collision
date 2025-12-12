@@ -17,7 +17,7 @@ extern "C" {
 
 #include <collision/internal/module.h>
 #include <collision/segment_classification.h>
-#include <math/c/segment.h>
+#include <math/segment.h>
 
 
 // NOTE: this function guarantees that the first point in 'out' belongs to

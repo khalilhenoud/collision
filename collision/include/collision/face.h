@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 #include <collision/internal/module.h>
-#include <math/c/face.h>
+#include <math/face.h>
 
 
 typedef struct sphere_t sphere_t;

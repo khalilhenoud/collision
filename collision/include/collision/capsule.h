@@ -17,7 +17,7 @@ extern "C" {
 
 #include <collision/internal/module.h>
 #include <collision/segment_classification.h>
-#include <math/c/capsule.h>
+#include <math/capsule.h>
 
 
 typedef struct segment_t segment_t;
